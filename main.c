@@ -2,12 +2,17 @@
 #include <string.h>
 #include "pico/stdlib.h"
 #include "PicoBattery.h"
-#include "LcdScreen.h"
+#include "GC9A01A.h"
 #include "ByteHelper.h"
+#include "Color.h"
+#include "ScreenFramebuffer.h"
+#include "TextureFontPainter.h"
 #include "hardware/adc.h"
 #include "hardware/spi.h"
 #include "hardware/i2c.h"
 #include "hardware/pwm.h"
+
+extern _Colors Colors;
 
 #define I2C_PORT i2c1
 #define DEV_SDA_PIN     (6)
@@ -42,14 +47,17 @@ Texture;
 
 static void DrawTexture(Screen* screen, Texture* texture, unsigned int x, unsigned int y)
 {
-    (*screen->DisplayWindows)(
+    (*screen->SetViewport)(
         screen, 
         x, 
         y, 
         x + texture->Width, 
-        y + texture->Height, 
-        texture->PixelData,
-        sizeof(uint16_t));
+        y + texture->Height);
+
+    (*screen->DrawBuffer)(
+        screen, 
+        (uint8_t*)texture->PixelData,
+        sizeof(uint16_t) * texture->Width * texture->Height);
 }
 
 static void ClearTexture(Texture* texture, uint16_t color)
@@ -62,7 +70,7 @@ static void ClearTexture(Texture* texture, uint16_t color)
     }
 }
 
-static void DEV_GPIO_Mode(uint16_t pin, bool direction)
+static void SetUpGpioPin(uint16_t pin, bool direction)
 {
     gpio_init(pin);
     gpio_set_dir(pin, direction);
@@ -76,6 +84,13 @@ static uint DEV_Module_Init(void)
     gpio_set_function(DEV_SCL_PIN, GPIO_FUNC_I2C);
     gpio_pull_up(DEV_SDA_PIN);
     gpio_pull_up(DEV_SCL_PIN);
+}
+
+static void DrawPoint(Color color, Point point, void* payload)
+{
+    Texture* texture = (Texture*)payload;
+    uint16_t pixelColor = Color_ToRgb565(color);
+    texture->PixelData[point.Y * texture->Width + point.X] = pixelColor;
 }
 
 int main(void)
@@ -103,26 +118,42 @@ int main(void)
     LcdScreen_Init(&lcdScreen, ScanDirection_Horizontal);
     Screen* screen = &lcdScreen.Base;
 
-    (*screen->Clear)(screen, GREEN);
-    (*screen->SetBacklightPercentage)(screen, 60);
+    (*screen->Clear)(screen, BLACK);
+    (*screen->SetBacklightPercentage)(screen, 50);
 
-    uint16_t image[50 * 50];
+    uint16_t image[100 * 100];
     Texture texture = 
     {
         .PixelData = image,
-        .Width = 50,
-        .Height = 50
+        .Width = 100,
+        .Height = 100 
     };
 
-    ClearTexture(&texture, RED);
+    TextureFontPainter textureFontPainter;
+    TextureFontPainter_Init(
+        DrawPoint, 
+        Colors.Green, 
+        Colors.Black, 
+        texture.Width, 
+        texture.Height, 
+        &texture, 
+        &textureFontPainter);
+
+    FontPainter* fontPainter = &textureFontPainter.Base; 
+
+    ClearTexture(&texture, BLACK);
+    (*fontPainter->SetCursorPosition)(fontPainter, (Point) { .X = 0, .Y = 0 });
+    (*fontPainter->DrawString)(fontPainter, "Hello, world!");
 
     unsigned int screenWidth = (*screen->GetWidth)(screen);
     unsigned int screenHeight = (*screen->GetHeight)(screen);
+    unsigned int centerX = screenWidth / 2;
+    unsigned int centerY = screenHeight / 2;
     DrawTexture(
         screen, 
         &texture, 
-        (screenWidth / 2) - (texture.Width / 2),
-        (screenHeight / 2) - (texture.Height / 2));
+        centerX - (texture.Width / 2),
+        centerY - (texture.Height / 2));
 
     while (true) { }
 }

@@ -1,5 +1,5 @@
-#ifndef LcdScreen_h
-#define LcdScreen_h
+#ifndef GC9A01A_h
+#define GC9A01A_h
 
 #include "Screen.h"
 
@@ -24,7 +24,7 @@ ScanDirection;
 typedef struct LcdScreen
 {
     Screen Base;
-	unsigned int BacklightPwnSliceNumber;
+	unsigned int BacklightPwmSliceNumber;
     LcdAttributes Attributes;
 }
 LcdScreen;

@@ -1,6 +1,6 @@
 #ifndef __GCDRAW_H
 #define __GCDRAW_H
-#include "lcd/lcd.h"
+#include "lcd.h"
 
 typedef enum {
   PS_NORMAL,

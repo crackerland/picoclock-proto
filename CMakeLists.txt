@@ -7,6 +7,10 @@ pico_sdk_init()
 set(RPI_LIB ${CMAKE_CURRENT_SOURCE_DIR}/rpi-base/lib)
 set(RPI_CORE ${CMAKE_CURRENT_SOURCE_DIR}/rpi-base/src/core)
 set(RPI_PERIPHERALS ${CMAKE_CURRENT_SOURCE_DIR}/rpi-base/src/peripherals)
+set(RPI_FONT ${CMAKE_CURRENT_SOURCE_DIR}/rpi-base/src/font)
+set(RPI_GRAPHICS ${CMAKE_CURRENT_SOURCE_DIR}/rpi-base/src/graphics)
+set(RPI_IO ${CMAKE_CURRENT_SOURCE_DIR}/rpi-base/src/io)
+set(RPI_ZLIB ${CMAKE_CURRENT_SOURCE_DIR}/rpi-base/src/zlib)
 add_library(core 
   ${RPI_CORE}/src/Arrays.c
 	${RPI_CORE}/src/MathHelper.c
@@ -17,22 +21,58 @@ add_library(core
 	${RPI_CORE}/src/print_helper.c
 	${RPI_CORE}/src/Tasks.c)
 
+add_library(font
+  ${RPI_FONT}/src/FontPainterEx.c
+  ${RPI_FONT}/src/TextureFontPainter.c
+  ${RPI_FONT}/src/FramebufferFontPainter.c)
+
+add_library(graphics
+	${RPI_GRAPHICS}/src/Color.c)
+  # ${RPI_GRAPHICS}/src/StreamBitmap.c
+	# ${RPI_GRAPHICS}/src/StreamPng.c
+
+add_library(io
+  ${RPI_IO}/src/MemoryStream.c)
+
+# add_library(zlib
+#   ${RPI_ZLIB}/src/adler32.c 
+# 	${RPI_ZLIB}/src/compress.c 
+# 	${RPI_ZLIB}/src/crc32.c 
+# 	${RPI_ZLIB}/src/deflate.c 
+# 	${RPI_ZLIB}/src/gzclose.c 
+#   ${RPI_ZLIB}/src/gzlib.c 
+#   ${RPI_ZLIB}/src/gzread.c 
+#   ${RPI_ZLIB}/src/gzwrite.c 
+#   ${RPI_ZLIB}/src/infback.c 
+#   ${RPI_ZLIB}/src/inffast.c 
+#   ${RPI_ZLIB}/src/inflate.c 
+#   ${RPI_ZLIB}/src/inftrees.c 
+#   ${RPI_ZLIB}/src/trees.c 
+#   ${RPI_ZLIB}/src/uncompr.c 
+#   ${RPI_ZLIB}/src/zutil.c)
+
 include_directories(${RPI_CORE}/include)
+include_directories(${RPI_FONT}/include)
 include_directories(${RPI_PERIPHERALS}/include)
+include_directories(${RPI_GRAPHICS}/include)
+include_directories(${RPI_IO}/include)
+# include_directories(${RPI_ZLIB}/include)
 
 add_subdirectory(./lib/lcd)
-include_directories(./lib/lcd)
 add_subdirectory(./lib/QMI8658)
-include_directories(./lib/QMI8658)
 add_subdirectory(./lib/Battery)
-include_directories(./lib/Battery/include)
-add_subdirectory(./lib/Screen)
-include_directories(./lib/Screen/include)
+add_subdirectory(./lib/GC9A01A)
+include_directories(
+  ./include
+  ./lib/GC9A01A/include
+  ./lib/Battery/include
+  ./lib/lcd
+  ./lib/QMI8658)
 
 add_executable(main
   main.c
-  lib/draw.c
-)
+  src/draw.c
+  src/ScreenFramebuffer.c)
 
 # enable usb output, disable uart output
 pico_enable_stdio_usb(main 1)
@@ -54,8 +94,11 @@ hardware_flash
 hardware_sync
 pico_bootsel_via_double_reset
 core
+font
 battery
-screen
+gc9a01a
+graphics
+io
 )
 
 add_custom_command(
