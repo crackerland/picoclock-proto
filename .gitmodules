@@ -1,0 +1,3 @@
+[submodule "rpi-base"]
+	path = rpi-base
+	url = https://github.com/crackerland/rpi-base.git

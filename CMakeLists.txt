@@ -4,10 +4,30 @@ set(PICO_BOARD="waveshare_rp2040_lcd_1.28")
 project(picoclock)
 pico_sdk_init()
 
+set(RPI_LIB ${CMAKE_CURRENT_SOURCE_DIR}/rpi-base/lib)
+set(RPI_CORE ${CMAKE_CURRENT_SOURCE_DIR}/rpi-base/src/core)
+set(RPI_PERIPHERALS ${CMAKE_CURRENT_SOURCE_DIR}/rpi-base/src/peripherals)
+add_library(core 
+  ${RPI_CORE}/src/Arrays.c
+	${RPI_CORE}/src/MathHelper.c
+	${RPI_CORE}/src/ByteHelper.c
+	${RPI_CORE}/src/crc.c
+	${RPI_CORE}/src/collections/LinkedList.c
+	${RPI_CORE}/src/collections/IterableQueryable.c
+	${RPI_CORE}/src/print_helper.c
+	${RPI_CORE}/src/Tasks.c)
+
+include_directories(${RPI_CORE}/include)
+include_directories(${RPI_PERIPHERALS}/include)
+
 add_subdirectory(./lib/lcd)
 include_directories(./lib/lcd)
 add_subdirectory(./lib/QMI8658)
 include_directories(./lib/QMI8658)
+add_subdirectory(./lib/Battery)
+include_directories(./lib/Battery/include)
+add_subdirectory(./lib/Screen)
+include_directories(./lib/Screen/include)
 
 add_executable(main
   main.c
@@ -33,6 +53,9 @@ hardware_adc
 hardware_flash
 hardware_sync
 pico_bootsel_via_double_reset
+core
+battery
+screen
 )
 
 add_custom_command(
