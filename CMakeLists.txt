@@ -62,12 +62,14 @@ add_subdirectory(./lib/lcd)
 add_subdirectory(./lib/QMI8658)
 add_subdirectory(./lib/Battery)
 add_subdirectory(./lib/GC9A01A)
+add_subdirectory(./lib/DateTime)
 include_directories(
   ./include
+  ./lib/lcd
   ./lib/GC9A01A/include
   ./lib/Battery/include
-  ./lib/lcd
-  ./lib/QMI8658)
+  ./lib/QMI8658,
+  ./lib/DateTime/include)
 
 add_executable(main
   main.c
@@ -99,6 +101,8 @@ battery
 gc9a01a
 graphics
 io
+datetime
+lcd
 )
 
 add_custom_command(

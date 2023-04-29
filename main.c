@@ -5,12 +5,16 @@
 #include "GC9A01A.h"
 #include "ByteHelper.h"
 #include "Color.h"
+#include "DateTimeFormatter.h"
 #include "ScreenFramebuffer.h"
 #include "TextureFontPainter.h"
 #include "hardware/adc.h"
 #include "hardware/spi.h"
 #include "hardware/i2c.h"
 #include "hardware/pwm.h"
+#include "hardware/rtc.h"
+#include "hardware/flash.h"
+#include "pico/util/datetime.h"
 
 extern _Colors Colors;
 
@@ -36,6 +40,14 @@ extern _Colors Colors;
 #define LGRAY          0X8551
 #define NBLACK         0x0821
 #define NWHITE         0xFFFE
+
+#define SAVE_STATE_CONTENT_SIZE (FLASH_PAGE_SIZE - 5)
+typedef struct SaveState
+{
+    char Name[5];
+    uint8_t Content[SAVE_STATE_CONTENT_SIZE];
+}
+SaveState;
 
 typedef struct Texture
 {
@@ -93,6 +105,43 @@ static void DrawPoint(Color color, Point point, void* payload)
     texture->PixelData[point.Y * texture->Width + point.X] = pixelColor;
 }
 
+// Allocate a single sector (which is the minimum) at the end of the flash memory
+// for user data. Program data is at the beginning, so this will not conflict.
+#define FLASH_USER_DATA_OFFSET (PICO_FLASH_SIZE_BYTES - FLASH_SECTOR_SIZE)
+const uint8_t* flashContents = (const uint8_t*) (XIP_BASE + FLASH_USER_DATA_OFFSET);
+static SaveState* LoadFlashState()
+{
+    return (SaveState*)flashContents;
+}
+
+static void SaveFlashState(uint8_t* data, size_t size)
+{
+    SaveState state = 
+    {
+        .Name = "SAVE"
+    };
+
+    memcpy(&state.Content, data, size);
+
+    // A whole number of sectors must be erased at a time.
+    flash_range_erase(FLASH_USER_DATA_OFFSET, FLASH_SECTOR_SIZE);
+    flash_range_program(FLASH_USER_DATA_OFFSET, (uint8_t*)&state, FLASH_PAGE_SIZE);
+}
+
+static Size MeasureString(char* string, FontPainter* fontPainter)
+{
+    Size totalSize = { };
+    int length = strlen(string);
+    for (int i = 0; i < length; i++)
+    {
+        Size glyphSize = (*fontPainter->MeasureGlyph)(fontPainter, string[i]);
+        totalSize.Width += glyphSize.Width;
+        totalSize.Height = MAX(totalSize.Height, glyphSize.Height);
+    }
+
+    return totalSize;
+}
+
 int main(void)
 {
     stdio_init_all();
@@ -120,12 +169,14 @@ int main(void)
 
     (*screen->Clear)(screen, BLACK);
     (*screen->SetBacklightPercentage)(screen, 50);
+    unsigned int screenWidth = (*screen->GetWidth)(screen);
+    unsigned int screenHeight = (*screen->GetHeight)(screen);
 
-    uint16_t image[100 * 100];
+    uint16_t image[screenWidth * 100];
     Texture texture = 
     {
         .PixelData = image,
-        .Width = 100,
+        .Width = screenWidth,
         .Height = 100 
     };
 
@@ -141,19 +192,62 @@ int main(void)
 
     FontPainter* fontPainter = &textureFontPainter.Base; 
 
-    ClearTexture(&texture, BLACK);
-    (*fontPainter->SetCursorPosition)(fontPainter, (Point) { .X = 0, .Y = 0 });
-    (*fontPainter->DrawString)(fontPainter, "Hello, world!");
-
-    unsigned int screenWidth = (*screen->GetWidth)(screen);
-    unsigned int screenHeight = (*screen->GetHeight)(screen);
     unsigned int centerX = screenWidth / 2;
     unsigned int centerY = screenHeight / 2;
-    DrawTexture(
-        screen, 
-        &texture, 
-        centerX - (texture.Width / 2),
-        centerY - (texture.Height / 2));
 
-    while (true) { }
+    rtc_init();
+
+    // Start on Friday June 5 2020 15:45:00
+    datetime_t time = 
+    {
+        .year  = 2023,
+        .month = 4,
+        .day   = 28,
+        .dotw  = 5, // 0 is Sunday, so 5 is Friday
+        .hour  = 20,
+        .min   = 7,
+        .sec   = 00
+    };
+
+    SaveState* savedState = (SaveState*)LoadFlashState();
+    if (!strcmp(savedState->Name, "SAVE"))
+    {
+        // Previous time was saved.
+        datetime_t* savedTime = (datetime_t*)savedState->Content;
+        memcpy(&time, savedTime, sizeof(datetime_t));
+    }
+
+    rtc_set_datetime(&time);
+
+    // clk_sys is >2000x faster than clk_rtc, so datetime is not updated immediately when rtc_get_datetime() is called.
+    // tbe delay is up to 3 RTC clock cycles (which is 64us with the default clock settings)
+    sleep_us(64);
+
+    char dateString[256] = { };
+    char timeString[256] = { };
+    while (true) 
+    { 
+        rtc_get_datetime(&time);
+
+        GetDayAndMonth(&time, dateString);
+        GetHoursMinutesSeconds(&time, timeString);
+
+        ClearTexture(&texture, BLACK);
+        (*fontPainter->SetCursorPosition)(fontPainter, (Point) { .X = 0, .Y = 0 });
+        (*fontPainter->DrawString)(fontPainter, dateString);
+
+        Size dateSize = MeasureString(dateString, fontPainter);
+        Size timeSize = MeasureString(timeString, fontPainter);
+        Point cursor = (*fontPainter->GetCursorPosition)(fontPainter);
+        cursor.Y += dateSize.Height;
+        cursor.X = 0;
+        (*fontPainter->SetCursorPosition)(fontPainter, cursor);
+        (*fontPainter->DrawString)(fontPainter, timeString);
+
+        DrawTexture(screen, &texture, centerX - (dateSize.Width / 2), centerY - dateSize.Height);
+
+        sleep_ms(1000);
+
+        SaveFlashState((uint8_t*)&time, sizeof(datetime_t));
+    }
 }
