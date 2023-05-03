@@ -11,6 +11,7 @@ set(RPI_FONT ${CMAKE_CURRENT_SOURCE_DIR}/rpi-base/src/font)
 set(RPI_GRAPHICS ${CMAKE_CURRENT_SOURCE_DIR}/rpi-base/src/graphics)
 set(RPI_IO ${CMAKE_CURRENT_SOURCE_DIR}/rpi-base/src/io)
 set(RPI_ZLIB ${CMAKE_CURRENT_SOURCE_DIR}/rpi-base/src/zlib)
+set(RPI_CHRONO ${CMAKE_CURRENT_SOURCE_DIR}/rpi-base/src/chrono)
 add_library(core 
   ${RPI_CORE}/src/Arrays.c
 	${RPI_CORE}/src/MathHelper.c
@@ -23,16 +24,23 @@ add_library(core
 
 add_library(font
   ${RPI_FONT}/src/FontPainterEx.c
-  ${RPI_FONT}/src/TextureFontPainter.c
   ${RPI_FONT}/src/FramebufferFontPainter.c)
 
 add_library(graphics
-	${RPI_GRAPHICS}/src/Color.c)
+	${RPI_GRAPHICS}/src/Color.c
+  ${RPI_GRAPHICS}/src/Texture16.c
+  ${RPI_GRAPHICS}/src/SystemFontTextView.c
+  ${RPI_GRAPHICS}/src/BufferTextureRenderer.c
+  ${RPI_GRAPHICS}/src/ScreenTextureRenderer.c
+  ${RPI_GRAPHICS}/src/TextureFontPainter.c)
   # ${RPI_GRAPHICS}/src/StreamBitmap.c
 	# ${RPI_GRAPHICS}/src/StreamPng.c
 
 add_library(io
   ${RPI_IO}/src/MemoryStream.c)
+
+add_library(chrono 
+  ${RPI_CHRONO}/src/DefaultDateTimeFormatter.c)
 
 # add_library(zlib
 #   ${RPI_ZLIB}/src/adler32.c 
@@ -57,27 +65,28 @@ include_directories(${RPI_PERIPHERALS}/include)
 include_directories(${RPI_GRAPHICS}/include)
 include_directories(${RPI_IO}/include)
 # include_directories(${RPI_ZLIB}/include)
+include_directories(${RPI_CHRONO}/include)
 
 add_subdirectory(./lib/lcd)
 add_subdirectory(./lib/QMI8658)
 add_subdirectory(./lib/Battery)
 add_subdirectory(./lib/GC9A01A)
-add_subdirectory(./lib/DateTime)
 include_directories(
   ./include
   ./lib/lcd
   ./lib/GC9A01A/include
   ./lib/Battery/include
-  ./lib/QMI8658,
-  ./lib/DateTime/include)
+  ./lib/QMI8658)
 
 add_executable(main
   main.c
   src/draw.c
-  src/ScreenFramebuffer.c)
+  src/ScreenFramebuffer.c
+  src/PicoClock.c
+  src/PicoDateTimeProvider.c
+  src/PicoTimer.c)
 
-# enable usb output, disable uart output
-pico_enable_stdio_usb(main 1)
+pico_enable_stdio_usb(main 0)
 pico_enable_stdio_uart(main 1)
 
 # create map/bin/hex/uf2 file etc.
@@ -96,13 +105,13 @@ hardware_flash
 hardware_sync
 pico_bootsel_via_double_reset
 core
+graphics
 font
 battery
 gc9a01a
-graphics
 io
-datetime
 lcd
+chrono
 )
 
 add_custom_command(

@@ -1,0 +1,59 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "../RP2040-LCD-1.28"
+		},
+		{
+			"path": "../pico-examples"
+		}
+	],
+	"settings": {
+		"cmake.statusbar.advanced": {
+			"debug": {
+				"visibility": "hidden"
+			},
+			"launch": {
+				"visibility": "hidden"
+			},
+			"build": {
+				"visibility": "hidden"
+			},
+			"buildTarget": {
+				"visibility": "hidden"
+			}
+		},
+		"files.associations": {
+			"watchdog.h": "c",
+			"functional": "c",
+			"gzguts.h": "c",
+			"framebuffer.h": "c",
+			"color.h": "c",
+			"flash.h": "c",
+			"datetime.h": "c",
+			"stdio.h": "c",
+			"array": "c",
+			"string_view": "c",
+			"initializer_list": "c",
+			"ranges": "c",
+			"utility": "c",
+			"texture16.h": "c",
+			"stdlib.h": "c",
+			"bit": "c",
+			"*.tcc": "c",
+			"chrono": "c",
+			"random": "c",
+			"istream": "c",
+			"limits": "c",
+			"numeric": "c",
+			"texture.h": "c",
+			"texturetexturerenderer.h": "c",
+			"picodatetimeprovider.h": "c",
+			"string.h": "c",
+			"time.h": "c"
+		},
+		"cortex-debug.variableUseNaturalFormat": true
+	}
+}

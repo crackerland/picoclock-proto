@@ -4,7 +4,9 @@
       "name": "Pico",
       "includePath": [
         "${workspaceFolder}/**",
-        "${env:PICO_SDK_PATH}/**"
+        "${env:PICO_SDK_PATH}/**",
+        "${workspaceFolder}/rpi-base/platform/sdl/SDL2-2.24.0/x86_64-w64-mingw32/include/SDL2",
+        "${workspaceFolder}/rpi-base/platform/sdl/SDL2_image-2.6.2/x86_64-w64-mingw32/include/SDL2"
       ],
       "defines": [],
       "compilerPath": "${env:PICO_INSTALL_PATH}/gcc-arm-none-eabi/bin/arm-none-eabi-gcc.exe",
