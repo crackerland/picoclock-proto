@@ -33,7 +33,7 @@ extern _Colors Colors;
 
 static void DrawPoint16(uint16_t color, unsigned int x, unsigned int y, Texture16* texture)
 {
-    texture->PixelData[y * texture->Width + x] = color;
+    texture->PixelData[y * texture->TextureBuffer.Width + x] = color;
 }
 
 static void DrawPoint(Color color, unsigned int x, unsigned int y, Texture16* texture)
@@ -116,6 +116,7 @@ static Size MeasureString(char* string, FontPainter* fontPainter)
     return totalSize;
 }
 
+extern void* startPtr;
 void PicoClock_Start(
     Screen* screen, 
     Timer* timer, 
@@ -130,37 +131,50 @@ void PicoClock_Start(
     unsigned int screenWidth = (*screen->GetWidth)(screen);
     unsigned int screenHeight = (*screen->GetHeight)(screen);
 
-    ScreenTextureRenderer textureRenderer;
-    ScreenTextureRenderer_Init(screen, &textureRenderer);
+    ScreenTextureRenderer screenRenderer;
+    ScreenTextureRenderer_Init(screen, &screenRenderer);
 
     uint16_t canvasTextureData[screenWidth * screenHeight];
+    TextureBuffer textureBuffer = 
+    {
+        .PixelData = canvasTextureData,
+        .Width = screenWidth,
+        .Height = screenHeight,
+        .Stride = screenWidth * sizeof(uint16_t)
+    };
+
     Texture16 canvasTexture;
     Texture16_Init(
-        canvasTextureData, 
+        canvasTextureData,
         screenWidth, 
         screenHeight, 
-        &textureRenderer.Base, 
+        &screenRenderer.Base, 
         &canvasTexture);
-
-    unsigned int centerX = screenWidth / 2;
-    unsigned int centerY = screenHeight / 2;
 
     BufferTextureRenderer canvasBufferRenderer;
     BufferTextureRenderer_Init(
-        canvasTexture.PixelData,
-        canvasTexture.Width,
-        canvasTexture.Height,
-        sizeof(uint16_t),
+        &textureBuffer,
         &canvasBufferRenderer);
 
-    uint16_t* dateFontTextureBuffer = (uint16_t*)malloc(screenWidth * screenHeight);
     SystemFontTextView dateTextView;
-    SystemFontTextView_Init(dateFontTextureBuffer, Colors.Green, Colors.Black, &canvasBufferRenderer.Base, &dateTextView);
+    SystemFontTextView_Init(
+        &textureBuffer,
+        Colors.Green, 
+        Colors.Black, 
+        &canvasBufferRenderer.Base, 
+        &dateTextView);
 
-    uint16_t* timeFontTextureBuffer = (uint16_t*)malloc(screenWidth * screenHeight);
     SystemFontTextView timeTextView;
-    SystemFontTextView_Init(timeFontTextureBuffer, Colors.Green, Colors.Black, &canvasBufferRenderer.Base, &timeTextView);
+    SystemFontTextView_Init(
+        &textureBuffer,
+        Colors.Green, 
+        Colors.Black, 
+        &canvasBufferRenderer.Base, 
+        &timeTextView);
 
+    const unsigned int centerX = screenWidth / 2;
+    const unsigned int centerY = screenHeight / 2;
+    (*canvasTexture.Base.Clear)(&canvasTexture.Base, 0x0);
     Paint_DrawCircle(centerX, centerY, (screenWidth / 2) - 1, YELLOW, false, &canvasTexture);
     while (true) 
     { 
@@ -169,14 +183,14 @@ void PicoClock_Start(
 
         (*dateTimeFormatter->GetDayAndMonth)(dateTimeFormatter, &time, dateTextView.Text);
         Size dateSize = (*dateTextView.Measure)(&dateTextView, screenWidth, screenHeight);
-        dateTextView.PositionX = centerX - (dateSize.Width / 2);
-        dateTextView.PositionY = centerY - dateSize.Height;
+        (*dateTextView.SetPositionX)(&dateTextView, centerX - (dateSize.Width / 2));
+        (*dateTextView.SetPositionY)(&dateTextView, centerY - dateSize.Height);
         (*dateTextView.Draw)(&dateTextView);
 
         (*dateTimeFormatter->GetHoursMinutesSeconds)(dateTimeFormatter, &time, timeTextView.Text);
         Size timeSize = (*timeTextView.Measure)(&timeTextView, screenWidth, screenHeight);
-        timeTextView.PositionX = centerX - (timeSize.Width / 2);
-        timeTextView.PositionY = centerY + timeSize.Height;
+        (*timeTextView.SetPositionX)(&timeTextView, centerX - (timeSize.Width / 2));
+        (*timeTextView.SetPositionY)(&timeTextView, centerY + timeSize.Height);
         (*timeTextView.Draw)(&timeTextView);
 
         (*canvasTexture.Base.Draw)(&canvasTexture.Base, 0, 0);

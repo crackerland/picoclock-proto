@@ -74,13 +74,20 @@ static void SaveFlashState(uint8_t* data, size_t size)
     flash_range_program(FLASH_USER_DATA_OFFSET, (uint8_t*)&state, FLASH_PAGE_SIZE);
 }
 
+static PicoDateTimeProvider dateTimeProvider;
+
 // RX interrupt handler
 void on_uart_rx() 
 {
+    uint8_t buffer[256] = { };
+    uint8_t* next = buffer;
     while (uart_is_readable(uart0)) 
     {
-        uint8_t ch = uart_getc(uart0);
+        *next++ = uart_getc(uart0);
     }
+
+    datetime_t* time = (datetime_t*)buffer;
+    rtc_set_datetime(time);
 }
 
 int main(void)
@@ -90,6 +97,7 @@ int main(void)
 
     uart_init(uart0, 115200);
     gpio_set_function(1, GPIO_FUNC_UART);
+
     // And set up and enable the interrupt handlers
     irq_set_exclusive_handler(UART0_IRQ, on_uart_rx);
     irq_set_enabled(UART0_IRQ, true);
@@ -100,14 +108,10 @@ int main(void)
     LcdScreen lcdScreen = { };
     LcdScreen_Init(&lcdScreen, ScanDirection_Horizontal);
 
-    PicoDateTimeProvider dateTimeProvider;
     PicoDateTimeProvider_Init(&dateTimeProvider);
 
     PicoTimer timer;
     PicoTimer_Init(&timer);
 
-    DefaultDateTimeFormatter formatter;
-    DefaultDateTimeFormatter_Init(&formatter);
-
-    PicoClock_Start(&lcdScreen.Base, &timer.Base, &dateTimeProvider.Base, &formatter.Base);
+    PicoClock_Start(&lcdScreen.Base, &timer.Base, &dateTimeProvider.Base);
 }
