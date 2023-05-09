@@ -113,5 +113,5 @@ int main(void)
     PicoTimer timer;
     PicoTimer_Init(&timer);
 
-    PicoClock_Start(&lcdScreen.Base, &timer.Base, &dateTimeProvider.Base);
+    App_Init(&lcdScreen.Base, &timer.Base, &dateTimeProvider.Base);
 }

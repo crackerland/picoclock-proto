@@ -9,13 +9,14 @@ static void GetDateTime(DateTimeProvider* provider, DateTime* out)
     // time(&rawTime);
     // struct tm* timeInfo = localtime(&rawTime);
     time_t now = time(NULL);
-    out->Year = 2023;
-    out->Month = 5;
-    out->DayOfMonth = 3;
-    out->DayOfWeek = 3;
-    out->Hour = 13;
-    out->Minute = 30;
-    out->Second = 25;
+    struct tm* time = localtime(&now);
+    out->Year = time->tm_year + 1900; // `tm_year` is the number of years since 1900.
+    out->Month = time->tm_mon;
+    out->DayOfMonth = time->tm_mday;
+    out->DayOfWeek = time->tm_wday;
+    out->Hour = time->tm_hour;
+    out->Minute = time->tm_min;
+    out->Second = time->tm_sec;
 }
 
 int main(int argc, char** argv)
@@ -33,7 +34,24 @@ int main(int argc, char** argv)
         .GetDateTime = GetDateTime
     };
 
-    PicoClock_Start(&screen.Base, &timer.Base, &dateTimeProvider);
+    App app;
+    App_Init(&screen.Base, &timer.Base, &dateTimeProvider, &app);
+
+    while (1)
+    {
+        SDL_Event e;
+        while (SDL_PollEvent(&e))
+        {
+            switch (e.type)
+            {
+                case SDL_QUIT:
+                    (*app.Lifecycle.Dispose)(&app.Lifecycle);
+                    return 0;
+            }
+        }
+
+        (*app.Lifecycle.Loop)(&app.Resources);
+    }
 
     return 0;
 }

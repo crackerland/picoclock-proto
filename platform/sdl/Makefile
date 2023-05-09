@@ -6,7 +6,8 @@ export AR = ar
 export LIB = $(abspath lib)
 export OPTIMIZATION = -O0 -g -DDEBUG
 BIN = $(abspath bin)
-RPI_ROOT = ../../rpi-base
+ROOT = $(abspath ../..)
+RPI_ROOT = ${ROOT}/rpi-base
 ROOT_SRC = ${RPI_ROOT}/src
 SDL_PLATFORM = ${RPI_ROOT}/platform/sdl
 SDL = ${SDL_PLATFORM}/SDL2-2.24.0/x86_64-w64-mingw32
@@ -18,12 +19,12 @@ CFLAGS = -std=c99 $(OPTIMIZATION) \
     -Wno-unused-function -Wno-unused-parameter -Wno-switch \
     -fdiagnostics-color=always \
 	-I${SDL}/include/SDL2 -I${SDL_IMG}/include/SDL2 -I${ROOT_SRC}/core/include -I${ROOT_SRC}/graphics/include -I${ROOT_SRC}/filesystem/include \
-	-Iinclude -I../../include -I${ROOT_SRC}/chrono/include -I${ROOT_SRC}/peripherals/include -I${ROOT_SRC}/font/include -I${ROOT_SRC}/zlib/include -I${ROOT_SRC}/json/include -I${ROOT_SRC}/io/include
+	-Iinclude -I${ROOT}/include -I${ROOT_SRC}/chrono/include -I${ROOT_SRC}/peripherals/include -I${ROOT_SRC}/font/include -I${ROOT_SRC}/zlib/include -I${ROOT_SRC}/json/include -I${ROOT_SRC}/io/include
 
 LDFLAGS = -static -L${LIB} -L${SDL}/lib -L${SDL_IMG}/lib -L/msys64/mingw64/lib -L/msys64/mingw64/x86_64-w64-mingw32/lib
 LDLIBS = -lchrono -lgraphics -lfilesystem -lfont -ljson -lio -lcore -lzlib -lmingw32 -lSDL2_image -lSDL2main -lSDL2 -mwindows -mconsole -Wl,--no-undefined -Wl,--dynamicbase -Wl,--nxcompat -Wl,--high-entropy-va -lm -ldinput8 -ldxguid -ldxerr8 -luser32 -lgdi32 -lwinmm -limm32 -lole32 -loleaut32 -lshell32 -lsetupapi -lversion -luuid -static-libgcc
 OBJS = main.o \
-	../../src/PicoClock.o \
+	${ROOT}/src/PicoClock.o \
 	src/SdlTimer.o \
 	src/FileStream.o \
 	src/SdlInput.o \

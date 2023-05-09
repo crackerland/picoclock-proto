@@ -116,85 +116,108 @@ static Size MeasureString(char* string, FontPainter* fontPainter)
     return totalSize;
 }
 
-extern void* startPtr;
-void PicoClock_Start(
+static void Loop(AppResources* app)
+{ 
+    DateTime time;
+    (*app->DateTimeProvider->GetDateTime)(app->DateTimeProvider, &time);
+
+    (*app->DateTimeFormatter->GetDayAndMonth)(app->DateTimeFormatter, &time, app->DateTextView->Text);
+    Size dateSize = (*app->DateTextView->Base.Measure)(&app->DateTextView->Base, app->ScreenWidth, app->ScreenHeight);
+    (*app->DateTextView->Base.SetPositionX)(&app->DateTextView->Base, app->CenterX);
+    (*app->DateTextView->Base.SetPositionY)(&app->DateTextView->Base, app->CenterY - dateSize.Height);
+    (*app->DateTextView->Base.Draw)(&app->DateTextView->Base);
+
+    (*app->DateTimeFormatter->GetHoursMinutesSeconds)(app->DateTimeFormatter, &time, app->TimeTextView->Text);
+    Size timeSize = (*app->TimeTextView->Base.Measure)(&app->TimeTextView->Base, app->ScreenWidth, app->ScreenHeight);
+    (*app->TimeTextView->Base.SetPositionX)(&app->TimeTextView->Base, app->CenterX - (timeSize.Width / 2));
+    (*app->TimeTextView->Base.SetPositionY)(&app->TimeTextView->Base, app->CenterY + timeSize.Height);
+    (*app->TimeTextView->Base.Draw)(&app->TimeTextView->Base);
+
+    (*app->CanvasTexture->Draw)(app->CanvasTexture, 0, 0);
+
+    (*app->Timer->WaitMilliseconds)(app->Timer, 1000);
+}
+
+static void Dispose(AppLifecycle* app)
+{
+    App* this = (App*)app;
+    free(this->TextureBuffer.PixelData);
+}
+
+void App_Init(
     Screen* screen, 
     Timer* timer, 
-    DateTimeProvider* dateTimeProvider)
+    DateTimeProvider* dateTimeProvider,
+    App* out)
 {
-    DefaultDateTimeFormatter formatter;
-    DefaultDateTimeFormatter_Init(&formatter);
-    DateTimeFormatter* dateTimeFormatter = &formatter.Base;
-
     (*screen->Clear)(screen, BLACK);
     (*screen->SetBacklightPercentage)(screen, 50);
     unsigned int screenWidth = (*screen->GetWidth)(screen);
     unsigned int screenHeight = (*screen->GetHeight)(screen);
 
-    ScreenTextureRenderer screenRenderer;
-    ScreenTextureRenderer_Init(screen, &screenRenderer);
-
-    uint16_t canvasTextureData[screenWidth * screenHeight];
-    TextureBuffer textureBuffer = 
+    App app = 
     {
-        .PixelData = canvasTextureData,
-        .Width = screenWidth,
-        .Height = screenHeight,
-        .Stride = screenWidth * sizeof(uint16_t)
+        .Lifecycle =
+        {
+            .Loop = Loop,
+            .Dispose = Dispose,
+        },
+        .Resources = 
+        {
+            .Screen = screen,
+            .Timer = timer,
+            .DateTimeProvider = dateTimeProvider,
+            .CanvasTexture = &out->CanvasTexture.Base,
+            .DateTextView = &out->DateTextView.Base,
+            .TimeTextView = &out->TimeTextView.Base,
+            .DateTimeFormatter = &out->DateTimeFormatter.Base,
+            .ScreenWidth = screenWidth,
+            .ScreenHeight = screenHeight,
+            .CenterX = screenWidth / 2,
+            .CenterY = screenHeight / 2
+        },
+        .TextureBuffer = 
+        {
+            .PixelData = (uint16_t*)malloc(sizeof(uint16_t) * screenWidth * screenHeight),
+            .Width = screenWidth,
+            .Height = screenHeight,
+            .Stride = screenWidth * sizeof(uint16_t)
+        }
     };
 
-    Texture16 canvasTexture;
+    memcpy(out, &app, sizeof(app));
+
+    DefaultDateTimeFormatter_Init(&out->DateTimeFormatter);
+    DateTimeFormatter* dateTimeFormatter = &out->DateTimeFormatter.Base;
+
+    ScreenTextureRenderer_Init(screen, &out->ScreenRenderer);
+
     Texture16_Init(
-        canvasTextureData,
+        out->TextureBuffer.PixelData,
         screenWidth, 
         screenHeight, 
-        &screenRenderer.Base, 
-        &canvasTexture);
+        &out->ScreenRenderer.Base, 
+        &out->CanvasTexture);
 
-    BufferTextureRenderer canvasBufferRenderer;
+    (*out->CanvasTexture.Base.Clear)(&out->CanvasTexture.Base, 0x0);
+
     BufferTextureRenderer_Init(
-        &textureBuffer,
-        &canvasBufferRenderer);
+        &out->TextureBuffer,
+        &out->CanvasBufferRenderer);
 
-    SystemFontTextView dateTextView;
     SystemFontTextView_Init(
-        &textureBuffer,
+        &out->TextureBuffer,
         Colors.Green, 
         Colors.Black, 
-        &canvasBufferRenderer.Base, 
-        &dateTextView);
+        &out->CanvasBufferRenderer.Base,
+        &out->DateTextView);
 
-    SystemFontTextView timeTextView;
     SystemFontTextView_Init(
-        &textureBuffer,
+        &out->TextureBuffer,
         Colors.Green, 
         Colors.Black, 
-        &canvasBufferRenderer.Base, 
-        &timeTextView);
+        &out->CanvasBufferRenderer.Base, 
+        &out->TimeTextView);
 
-    const unsigned int centerX = screenWidth / 2;
-    const unsigned int centerY = screenHeight / 2;
-    (*canvasTexture.Base.Clear)(&canvasTexture.Base, 0x0);
-    Paint_DrawCircle(centerX, centerY, (screenWidth / 2) - 1, YELLOW, false, &canvasTexture);
-    while (true) 
-    { 
-        DateTime time;
-        (*dateTimeProvider->GetDateTime)(dateTimeProvider, &time);
-
-        (*dateTimeFormatter->GetDayAndMonth)(dateTimeFormatter, &time, dateTextView.Text);
-        Size dateSize = (*dateTextView.Measure)(&dateTextView, screenWidth, screenHeight);
-        (*dateTextView.SetPositionX)(&dateTextView, centerX - (dateSize.Width / 2));
-        (*dateTextView.SetPositionY)(&dateTextView, centerY - dateSize.Height);
-        (*dateTextView.Draw)(&dateTextView);
-
-        (*dateTimeFormatter->GetHoursMinutesSeconds)(dateTimeFormatter, &time, timeTextView.Text);
-        Size timeSize = (*timeTextView.Measure)(&timeTextView, screenWidth, screenHeight);
-        (*timeTextView.SetPositionX)(&timeTextView, centerX - (timeSize.Width / 2));
-        (*timeTextView.SetPositionY)(&timeTextView, centerY + timeSize.Height);
-        (*timeTextView.Draw)(&timeTextView);
-
-        (*canvasTexture.Base.Draw)(&canvasTexture.Base, 0, 0);
-
-        (*timer->WaitMilliseconds)(timer, 1000);
-    }
+    Paint_DrawCircle(out->Resources.CenterX, out->Resources.CenterY, (screenWidth / 2) - 1, YELLOW, false, &out->CanvasTexture);
 }
