@@ -123,7 +123,7 @@ static void Loop(AppResources* app)
 
     (*app->DateTimeFormatter->GetDayAndMonth)(app->DateTimeFormatter, &time, app->DateTextView->Text);
     Size dateSize = (*app->DateTextView->Base.Measure)(&app->DateTextView->Base, app->ScreenWidth, app->ScreenHeight);
-    (*app->DateTextView->Base.SetPositionX)(&app->DateTextView->Base, app->CenterX);
+    (*app->DateTextView->Base.SetPositionX)(&app->DateTextView->Base, app->CenterX - (dateSize.Width / 2));
     (*app->DateTextView->Base.SetPositionY)(&app->DateTextView->Base, app->CenterY - dateSize.Height);
     (*app->DateTextView->Base.Draw)(&app->DateTextView->Base);
 
