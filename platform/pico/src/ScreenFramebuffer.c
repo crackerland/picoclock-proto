@@ -56,7 +56,7 @@ static void DrawPixel(Framebuffer* framebuffer, Color color, Point point)
 static void Clear(Framebuffer* framebuffer, Color color)
 {
     Screen* screen = ((ScreenFramebuffer*)framebuffer)->Screen;
-    (*screen->Clear)(screen, Color_ToRgb565(color));
+    (*screen->Clear)(screen, color);
 }
 
 static void SetViewportOffset(Framebuffer* framebuffer, unsigned int offset)

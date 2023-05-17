@@ -52,8 +52,22 @@
 			"texturetexturerenderer.h": "c",
 			"picodatetimeprovider.h": "c",
 			"string.h": "c",
-			"time.h": "c"
+			"time.h": "c",
+			"texturerenderer.h": "c",
+			"texturebuffer.h": "c",
+			"point.h": "c",
+			"rectangle.h": "c",
+			"picoclock.h": "c",
+			"bytehelper.h": "c"
 		},
-		"cortex-debug.variableUseNaturalFormat": true
+		"cortex-debug.variableUseNaturalFormat": true,
+		"makefile.makefilePath": "${workspaceFolder}/platform/sdl/",
+		"makefile.configurations": [
+			{
+				"makeArgs": [ "-j4" ],
+				"name": "Unnamed configuration 1"
+			}
+		],
+		"makefile.launchConfigurations": [ ]
 	}
 }

@@ -26,7 +26,7 @@ static void Post(Timer* timer, uint32_t microSeconds, void* param, TimerCallback
     callbackData->Timer = timer;
     callbackData->Param = param;
 
-    add_alarm_in_us(microSeconds, OnPostComplete, param, false);
+    add_alarm_in_us(microSeconds, OnPostComplete, callbackData, false);
 }
 
 static void WaitMicroseconds(Timer* timer, uint32_t us)
@@ -41,8 +41,7 @@ static void WaitMilliseconds(Timer* timer, uint32_t ms)
 
 static uint32_t GetCurrentCounter(Timer* timer)
 {
-    // TODO
-    return 0;
+    return time_us_32();
 }
 
 void PicoTimer_Init(PicoTimer* out)

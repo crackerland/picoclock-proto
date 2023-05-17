@@ -1,3 +1,7 @@
+// QMI8658C
+// Low Noise, Wide Bandwidth 6D Inertial Measurement
+// Unit with Motion Co-Processor and Sensor Fusion
+
 #ifndef QMI8658_H
 #define QMI8658_H
 
@@ -505,7 +509,7 @@ enum QMI8658_WakeOnMotionThreshold
 
 extern unsigned char QMI8658_write_reg(unsigned char reg, unsigned char value);
 extern unsigned char QMI8658_read_reg(unsigned char reg, unsigned char *buf, unsigned short len);
-extern unsigned char QMI8658_init();
+extern unsigned char QMI8658_init(i2c_inst_t* i2cInstance);
 extern unsigned char QMI8658_reset(void);
 extern void QMI8658_reenable();
 extern void QMI8658_Config_apply(struct QMI8658Config const *config);

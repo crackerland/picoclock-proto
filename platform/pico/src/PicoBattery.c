@@ -33,14 +33,20 @@ float Read(Battery* bat)
     return this->read;
 }
 
-void PicoBattery_Init(PicoBattery* out)
+void PicoBattery_Init(float batteryMah, PicoBattery* out)
 {
     PicoBattery battery = 
     {
         .Base = 
         {
             .Read = Read
-        },
+        }, 
+        .mA = batteryMah, 
+        .load = 4.16f,
+        .max = 3.325781f,
+        .min = 4.158838f,
+        .dif = 0.0f,
+        .read = 0.0f
     };
 
     // ADC

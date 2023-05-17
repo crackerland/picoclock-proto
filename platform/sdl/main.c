@@ -1,13 +1,11 @@
 #include <time.h>
+#include <stdio.h>
 #include "PicoClock.h"
 #include "SdlScreen.h"
 #include "SdlTimer.h"
 
 static void GetDateTime(DateTimeProvider* provider, DateTime* out)
 {
-    // time_t rawTime;
-    // time(&rawTime);
-    // struct tm* timeInfo = localtime(&rawTime);
     time_t now = time(NULL);
     struct tm* time = localtime(&now);
     out->Year = time->tm_year + 1900; // `tm_year` is the number of years since 1900.
@@ -17,6 +15,23 @@ static void GetDateTime(DateTimeProvider* provider, DateTime* out)
     out->Hour = time->tm_hour;
     out->Minute = time->tm_min;
     out->Second = time->tm_sec;
+
+    printf("Time: %lu\n", (unsigned long)now);
+}
+
+static float const Read(Battery* battery)
+{
+    return 4.0;
+}
+
+static Battery noOpBattery =
+{
+    .Read = Read
+};
+
+static Battery* GetBattery(PowerManager* pm)
+{
+    return &noOpBattery;
 }
 
 int main(int argc, char** argv)
@@ -34,8 +49,13 @@ int main(int argc, char** argv)
         .GetDateTime = GetDateTime
     };
 
+    PowerManager powerManager = 
+    { 
+        .GetBattery = GetBattery
+    };
+
     App app;
-    App_Init(&screen.Base, &timer.Base, &dateTimeProvider, &app);
+    App_Init(&screen.Base, &timer.Base, &dateTimeProvider, &powerManager, &app);
 
     while (1)
     {
@@ -51,6 +71,7 @@ int main(int argc, char** argv)
         }
 
         (*app.Lifecycle.Loop)(&app.Resources);
+        SDL_Delay(1000);
     }
 
     return 0;

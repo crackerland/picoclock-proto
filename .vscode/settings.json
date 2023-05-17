@@ -26,5 +26,6 @@
     "files.associations": {
         "watchdog.h": "c",
         "functional": "c"
-    }
+    },
+    "cmake.sourceDirectory": "C:/Users/aslcl/Development/ExternalLibs/picoclock-proto/platform/pico"
 }

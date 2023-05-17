@@ -1,6 +1,7 @@
 #ifndef PicoClock_h
 #define PicoClock_h
 
+#include "PowerManager.h"
 #include "Screen.h"
 #include "Timer.h"
 #include "DateTime.h"
@@ -9,6 +10,7 @@
 #include "SystemFontTextView.h"
 #include "ScreenTextureRenderer.h"
 #include "BufferTextureRenderer.h"
+#include "PowerManager.h"
 
 typedef struct AppResources
 {
@@ -19,6 +21,8 @@ typedef struct AppResources
     Texture* CanvasTexture;
     TextView* DateTextView;
     TextView* TimeTextView;
+    TextView* BatteryTextView;
+    PowerManager* PowerManager;
     const unsigned int CenterX;
     const unsigned int CenterY;
     const unsigned int ScreenWidth;
@@ -43,6 +47,7 @@ typedef struct App
     BufferTextureRenderer CanvasBufferRenderer;
     SystemFontTextView DateTextView;
     SystemFontTextView TimeTextView;
+    SystemFontTextView BatteryTextView;
     Texture16 CanvasTexture;
 }
 App;
@@ -51,6 +56,7 @@ extern void App_Init(
     Screen* screen, 
     Timer* timer, 
     DateTimeProvider* dateTimeProvider,
+    PowerManager* powerManager,
     App* out);
 
 #endif

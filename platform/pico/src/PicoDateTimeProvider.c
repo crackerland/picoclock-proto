@@ -2,6 +2,13 @@
 #include <string.h>
 #include "pico/stdlib.h"
 
+// static int GetEstTime(int utcTime)
+// {
+//     // EST is UTC - 4.
+//     int offset = utcTime - 4;
+//     return offset < 0 ? 12 + offset : offset; 
+// }
+
 static void GetDateTime(DateTimeProvider* provider, DateTime* out)
 {
     PicoDateTimeProvider* this = (PicoDateTimeProvider*)provider;
@@ -27,22 +34,14 @@ void PicoDateTimeProvider_Init(PicoDateTimeProvider* out)
         .Base = 
         {
             .GetDateTime = GetDateTime
-        },
-
-        // Start on Friday June 5 2020 15:45:00
-        .Time = 
-        {
-            .year  = 2023,
-            .month = 4,
-            .day   = 28,
-            .dotw  = 5, // 0 is Sunday, 6 is Saturday
-            .hour  = 20,
-            .min   = 7,
-            .sec   = 00
         }
     };
 
-    rtc_init();
+    if (!rtc_running())
+    {
+        // Don't restart it if we already have the date set.
+        rtc_init();
+    }
 
     // SaveState* savedState = (SaveState*)LoadFlashState();
     // if (!strcmp(savedState->Name, "SAVE"))
@@ -52,11 +51,11 @@ void PicoDateTimeProvider_Init(PicoDateTimeProvider* out)
     //     memcpy(&provider.Time, savedTime, sizeof(datetime_t));
     // }
 
-    rtc_set_datetime(&provider.Time);
+    // rtc_set_datetime(&provider.Time);
 
     // clk_sys is >2000x faster than clk_rtc, so datetime is not updated immediately when rtc_get_datetime() is called.
     // tbe delay is up to 3 RTC clock cycles (which is 64us with the default clock settings)
-    sleep_us(64);
+    // sleep_us(64);
 
     memcpy(out, &provider, sizeof(provider));
 }

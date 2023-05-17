@@ -1,6 +1,7 @@
 #include "PicoClock.h"
 #include <string.h>
 #include <stdlib.h>
+#include <stdio.h>
 #include "DefaultDateTimeFormatter.h"
 #include "ScreenTextureRenderer.h"
 #include "BufferTextureRenderer.h"
@@ -10,30 +11,30 @@
 #include "MathHelper.h"
 #include "ByteHelper.h"
 
-#define WHITE          0xFFFF
-#define BLACK          0x0000
-#define BLUE           0x001F
-#define BRED           0XF81F
-#define GRED           0XFFE0
-#define ORANGE         0XFE20
-#define GBLUE          0X07FF
-#define RED            0xF800
-#define MAGENTA        0xF81F
-#define GREEN          0x07E0
-#define CYAN           0x7FFF
-#define YELLOW         0xFFE0
-#define BROWN          0XBC40
-#define BRRED          0XFC07
-#define GRAY           0X8430
-#define LGRAY          0X8551
-#define NBLACK         0x0821
-#define NWHITE         0xFFFE
+// #define WHITE          0xFFFF
+// #define BLACK          0x0000
+// #define BLUE           0x001F
+// #define BRED           0XF81F
+// #define GRED           0XFFE0
+// #define ORANGE         0XFE20
+// #define GBLUE          0X07FF
+// #define RED            0xF800
+// #define MAGENTA        0xF81F
+// #define GREEN          0x07E0
+// #define CYAN           0x7FFF
+// #define YELLOW         0xFFE0
+// #define BROWN          0XBC40
+// #define BRRED          0XFC07
+// #define GRAY           0X8430
+// #define LGRAY          0X8551
+// #define NBLACK         0x0821
+// #define NWHITE         0xFFFE
 
 extern _Colors Colors;
 
 static void DrawPoint16(uint16_t color, unsigned int x, unsigned int y, Texture16* texture)
 {
-    texture->PixelData[y * texture->TextureBuffer.Width + x] = color;
+    texture->PixelData[y * texture->Base.TextureBuffer.Width + x] = color;
 }
 
 static void DrawPoint(Color color, unsigned int x, unsigned int y, Texture16* texture)
@@ -42,100 +43,113 @@ static void DrawPoint(Color color, unsigned int x, unsigned int y, Texture16* te
 }
 
 void Paint_DrawCircle(
-    uint16_t X_Center, 
-    uint16_t Y_Center, 
-    uint16_t Radius, 
-    uint16_t Color, 
-    bool Draw_Fill,
+    uint16_t xCenter, 
+    uint16_t yCenter, 
+    uint16_t radius, 
+    uint16_t color, 
+    bool drawFilled,
     Texture16* texture)
 {
-    Color = ByteHelper_Reverse16(Color);
+    // Draw a circle from(0, R) as a starting point
+    int16_t xCurrent = 0;
+    int16_t yCurrent = radius;
 
-    //Draw a circle from(0, R) as a starting point
-    int16_t XCurrent, YCurrent;
-    XCurrent = 0;
-    YCurrent = Radius;
-
-    //Cumulative error,judge the next point of the logo
-    int16_t Esp = 3 - (Radius << 1 );
+    // Cumulative error,judge the next point of the logo
+    int16_t esp = 3 - (radius << 1 );
 
     int16_t sCountY;
-    if (Draw_Fill) {
-        while (XCurrent <= YCurrent ) { //Realistic circles
-            for (sCountY = XCurrent; sCountY <= YCurrent; sCountY ++ ) {
-                DrawPoint16(Color, X_Center + XCurrent, Y_Center + sCountY, texture);//1
-                DrawPoint16(Color, X_Center - XCurrent, Y_Center + sCountY, texture);//2
-                DrawPoint16(Color, X_Center - sCountY, Y_Center + XCurrent, texture);//3
-                DrawPoint16(Color, X_Center - sCountY, Y_Center - XCurrent, texture);//4
-                DrawPoint16(Color, X_Center - XCurrent, Y_Center - sCountY, texture);//5
-                DrawPoint16(Color, X_Center + XCurrent, Y_Center - sCountY, texture);//6
-                DrawPoint16(Color, X_Center + sCountY, Y_Center - XCurrent, texture);//7
-                DrawPoint16(Color, X_Center + sCountY, Y_Center + XCurrent, texture);
-            }
-            if (Esp < 0 )
-                Esp += 4 * XCurrent + 6;
-            else {
-                Esp += 10 + 4 * (XCurrent - YCurrent );
-                YCurrent --;
-            }
-            XCurrent ++;
-        }
-    } else { //Draw a hollow circle
-        while (XCurrent <= YCurrent ) {
-            DrawPoint16(Color, X_Center + XCurrent, Y_Center + YCurrent, texture);//1
-            DrawPoint16(Color, X_Center - XCurrent, Y_Center + YCurrent, texture);//2
-            DrawPoint16(Color, X_Center - YCurrent, Y_Center + XCurrent, texture);//3
-            DrawPoint16(Color, X_Center - YCurrent, Y_Center - XCurrent, texture);//4
-            DrawPoint16(Color, X_Center - XCurrent, Y_Center - YCurrent, texture);//5
-            DrawPoint16(Color, X_Center + XCurrent, Y_Center - YCurrent, texture);//6
-            DrawPoint16(Color, X_Center + YCurrent, Y_Center - XCurrent, texture);//7
-            DrawPoint16(Color, X_Center + YCurrent, Y_Center + XCurrent, texture);//0
-
-            if (Esp < 0 )
-                Esp += 4 * XCurrent + 6;
-            else {
-                Esp += 10 + 4 * (XCurrent - YCurrent );
-                YCurrent --;
-            }
-            XCurrent ++;
-        }
-    }
-}
-
-static Size MeasureString(char* string, FontPainter* fontPainter)
-{
-    Size totalSize = { };
-    int length = strlen(string);
-    for (int i = 0; i < length; i++)
+    if (drawFilled) 
     {
-        Size glyphSize = (*fontPainter->MeasureGlyph)(fontPainter, string[i]);
-        totalSize.Width += glyphSize.Width;
-        totalSize.Height = Math_Max(totalSize.Height, glyphSize.Height);
-    }
+        while (xCurrent <= yCurrent) 
+        {
+            //Realistic circles
+            for (sCountY = xCurrent; sCountY <= yCurrent; sCountY ++ ) 
+            {
+                DrawPoint16(color, xCenter + xCurrent, yCenter + sCountY, texture);//1
+                DrawPoint16(color, xCenter - xCurrent, yCenter + sCountY, texture);//2
+                DrawPoint16(color, xCenter - sCountY, yCenter + xCurrent, texture);//3
+                DrawPoint16(color, xCenter - sCountY, yCenter - xCurrent, texture);//4
+                DrawPoint16(color, xCenter - xCurrent, yCenter - sCountY, texture);//5
+                DrawPoint16(color, xCenter + xCurrent, yCenter - sCountY, texture);//6
+                DrawPoint16(color, xCenter + sCountY, yCenter - xCurrent, texture);//7
+                DrawPoint16(color, xCenter + sCountY, yCenter + xCurrent, texture);
+            }
+            if (esp < 0 )
+            {
+                esp += 4 * xCurrent + 6;
+            }
+            else 
+            {
+                esp += 10 + 4 * (xCurrent - yCurrent);
+                yCurrent--;
+            }
 
-    return totalSize;
+            xCurrent++;
+        }
+    } 
+    else 
+    { //Draw a hollow circle
+        while (xCurrent <= yCurrent ) 
+        {
+            DrawPoint16(color, xCenter + xCurrent, yCenter + yCurrent, texture);//1
+            DrawPoint16(color, xCenter - xCurrent, yCenter + yCurrent, texture);//2
+            DrawPoint16(color, xCenter - yCurrent, yCenter + xCurrent, texture);//3
+            DrawPoint16(color, xCenter - yCurrent, yCenter - xCurrent, texture);//4
+            DrawPoint16(color, xCenter - xCurrent, yCenter - yCurrent, texture);//5
+            DrawPoint16(color, xCenter + xCurrent, yCenter - yCurrent, texture);//6
+            DrawPoint16(color, xCenter + yCurrent, yCenter - xCurrent, texture);//7
+            DrawPoint16(color, xCenter + yCurrent, yCenter + xCurrent, texture);//0
+
+            if (esp < 0 )
+            {
+                esp += 4 * xCurrent + 6;
+            }
+            else 
+            {
+                esp += 10 + 4 * (xCurrent - yCurrent );
+                yCurrent--;
+            }
+
+            xCurrent++;
+        }
+    }
 }
 
 static void Loop(AppResources* app)
 { 
+    (*app->CanvasTexture->Clear)(app->CanvasTexture, Colors.Black);
+    Paint_DrawCircle(
+        app->CenterX, 
+        app->CenterY, 
+        (app->ScreenWidth / 2) - 1, 
+        Color_ToRgb565(Colors.Yellow), 
+        false, 
+        (Texture16*)app->CanvasTexture);
+
     DateTime time;
     (*app->DateTimeProvider->GetDateTime)(app->DateTimeProvider, &time);
 
     (*app->DateTimeFormatter->GetDayAndMonth)(app->DateTimeFormatter, &time, app->DateTextView->Text);
-    Size dateSize = (*app->DateTextView->Base.Measure)(&app->DateTextView->Base, app->ScreenWidth, app->ScreenHeight);
-    (*app->DateTextView->Base.SetPositionX)(&app->DateTextView->Base, app->CenterX - (dateSize.Width / 2));
-    (*app->DateTextView->Base.SetPositionY)(&app->DateTextView->Base, app->CenterY - dateSize.Height);
+    Size textViewSize = (*app->DateTextView->Base.Measure)(&app->DateTextView->Base, app->ScreenWidth, app->ScreenHeight);
+    (*app->DateTextView->Base.SetPositionX)(&app->DateTextView->Base, app->CenterX - (textViewSize.Width / 2));
+    (*app->DateTextView->Base.SetPositionY)(&app->DateTextView->Base, app->CenterY - textViewSize.Height);
     (*app->DateTextView->Base.Draw)(&app->DateTextView->Base);
 
     (*app->DateTimeFormatter->GetHoursMinutesSeconds)(app->DateTimeFormatter, &time, app->TimeTextView->Text);
-    Size timeSize = (*app->TimeTextView->Base.Measure)(&app->TimeTextView->Base, app->ScreenWidth, app->ScreenHeight);
-    (*app->TimeTextView->Base.SetPositionX)(&app->TimeTextView->Base, app->CenterX - (timeSize.Width / 2));
-    (*app->TimeTextView->Base.SetPositionY)(&app->TimeTextView->Base, app->CenterY + timeSize.Height);
+    textViewSize = (*app->TimeTextView->Base.Measure)(&app->TimeTextView->Base, app->ScreenWidth, app->ScreenHeight);
+    (*app->TimeTextView->Base.SetPositionX)(&app->TimeTextView->Base, app->CenterX - (textViewSize.Width / 2));
+    (*app->TimeTextView->Base.SetPositionY)(&app->TimeTextView->Base, app->CenterY + textViewSize.Height);
     (*app->TimeTextView->Base.Draw)(&app->TimeTextView->Base);
 
-    (*app->CanvasTexture->Draw)(app->CanvasTexture, 0, 0);
+    Battery* battery = (*app->PowerManager->GetBattery)(app->PowerManager);
+    float voltage = (*battery->Read)(battery);
+    sprintf(app->BatteryTextView->Text, "%.1f v.", voltage);
+    textViewSize = (*app->BatteryTextView->Base.Measure)(&app->BatteryTextView->Base, app->ScreenWidth, app->ScreenHeight);
+    (*app->BatteryTextView->Base.SetPositionX)(&app->BatteryTextView->Base, app->CenterX - (textViewSize.Width / 2));
+    (*app->BatteryTextView->Base.SetPositionY)(&app->BatteryTextView->Base, textViewSize.Height * 2);
+    (*app->BatteryTextView->Base.Draw)(&app->BatteryTextView->Base);
 
-    (*app->Timer->WaitMilliseconds)(app->Timer, 1000);
+    (*app->CanvasTexture->Draw)(app->CanvasTexture, 0, 0);
 }
 
 static void Dispose(AppLifecycle* app)
@@ -144,13 +158,19 @@ static void Dispose(AppLifecycle* app)
     free(this->TextureBuffer.PixelData);
 }
 
+static void SetUp(AppResources* app)
+{
+    (*app->CanvasTexture->Clear)(app->CanvasTexture, Colors.Black);
+}
+
 void App_Init(
     Screen* screen, 
     Timer* timer, 
     DateTimeProvider* dateTimeProvider,
+    PowerManager* powerManager,
     App* out)
 {
-    (*screen->Clear)(screen, BLACK);
+    (*screen->Clear)(screen, Colors.Black);
     (*screen->SetBacklightPercentage)(screen, 50);
     unsigned int screenWidth = (*screen->GetWidth)(screen);
     unsigned int screenHeight = (*screen->GetHeight)(screen);
@@ -167,9 +187,11 @@ void App_Init(
             .Screen = screen,
             .Timer = timer,
             .DateTimeProvider = dateTimeProvider,
-            .CanvasTexture = &out->CanvasTexture.Base,
+            .PowerManager = powerManager,
+            .CanvasTexture = &out->CanvasTexture.Base.Base,
             .DateTextView = &out->DateTextView.Base,
             .TimeTextView = &out->TimeTextView.Base,
+            .BatteryTextView = &out->BatteryTextView.Base,
             .DateTimeFormatter = &out->DateTimeFormatter.Base,
             .ScreenWidth = screenWidth,
             .ScreenHeight = screenHeight,
@@ -199,25 +221,30 @@ void App_Init(
         &out->ScreenRenderer.Base, 
         &out->CanvasTexture);
 
-    (*out->CanvasTexture.Base.Clear)(&out->CanvasTexture.Base, 0x0);
-
     BufferTextureRenderer_Init(
         &out->TextureBuffer,
         &out->CanvasBufferRenderer);
 
     SystemFontTextView_Init(
         &out->TextureBuffer,
-        Colors.Green, 
+        Colors.Blue, 
         Colors.Black, 
         &out->CanvasBufferRenderer.Base,
         &out->DateTextView);
 
     SystemFontTextView_Init(
         &out->TextureBuffer,
-        Colors.Green, 
+        Colors.Red, 
         Colors.Black, 
         &out->CanvasBufferRenderer.Base, 
         &out->TimeTextView);
 
-    Paint_DrawCircle(out->Resources.CenterX, out->Resources.CenterY, (screenWidth / 2) - 1, YELLOW, false, &out->CanvasTexture);
+    SystemFontTextView_Init(
+        &out->TextureBuffer,
+        Colors.Green, 
+        Colors.Black, 
+        &out->CanvasBufferRenderer.Base, 
+        &out->BatteryTextView);
+
+    SetUp(&out->Resources);
 }

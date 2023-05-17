@@ -1,10 +1,10 @@
 #include "SdlScreen.h"
 #include <string.h>
 
-static void Clear(Screen* screen, uint16_t color)
+static void Clear(Screen* screen, Color color)
 {
     SdlScreen* this = (SdlScreen*)screen;
-    SDL_SetRenderDrawColor(this->Renderer, 0, 0, 0xFF, 0xFF);
+    SDL_SetRenderDrawColor(this->Renderer, color.R, color.G, color.B, color.A);
     SDL_RenderClear(this->Renderer);
     SDL_SetRenderDrawColor(this->Renderer, 0, 0, 0, 0);
 }
@@ -70,7 +70,6 @@ void SdlScreen_Init(SdlScreen* out, unsigned int width, unsigned int height)
     SDL_Renderer* renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
     SDL_RenderSetLogicalSize(renderer, width, height);
 
-    // uint32_t pixelFormat = SDL_GetWindowPixelFormat(window);
     SDL_Texture* texture = SDL_CreateTexture(
         renderer, 
         SDL_PIXELFORMAT_RGB565,
@@ -82,8 +81,6 @@ void SdlScreen_Init(SdlScreen* out, unsigned int width, unsigned int height)
     int actualWidth = 0;
     int actualHeight = 0;
     SDL_QueryTexture(texture, &format, NULL, &actualWidth, &actualHeight);
-
-// SDL_PixelFormatEnum
 
     SdlScreen screen = 
     {

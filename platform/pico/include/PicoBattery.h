@@ -16,6 +16,6 @@ typedef struct PicoBattery
 } 
 PicoBattery;
 
-extern void PicoBattery_Init(PicoBattery* out);
+extern void PicoBattery_Init(float batteryMah, PicoBattery* out);
 
 #endif

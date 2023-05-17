@@ -626,8 +626,15 @@ unsigned char QMI8658_reset(void){
 	QMI8658_write_reg(QMI8658_Reset, 0x01);
 }
 
-unsigned char QMI8658_init()
+unsigned char QMI8658_init(i2c_inst_t* i2cInstance)
 {
+    // I2C Config
+    i2c_init(i2cInstance, 400 * 1000);
+    gpio_set_function(DEV_SDA_PIN, GPIO_FUNC_I2C);
+    gpio_set_function(DEV_SCL_PIN, GPIO_FUNC_I2C);
+    gpio_pull_up(DEV_SDA_PIN);
+    gpio_pull_up(DEV_SCL_PIN);
+
 	QMI8658_reset();
 	sleep_ms(100);
 	unsigned char QMI8658_chip_id = 0x00;
