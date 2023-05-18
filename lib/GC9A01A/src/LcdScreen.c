@@ -38,7 +38,7 @@
 #define CMD_MEMORY_ACCESS_CONTROL 0x36
 #define CMD_VERTICAL_SCROLLING_START_ADDRESS 0x37
 #define CMD_IDLE_MODE_OFF 0x38
-#define CMD_IDLE_MODE_ON 0x39 // COLMOD - See 6.2.22
+#define CMD_IDLE_MODE_ON 0x39 // COLMOD Idle Mode ON - See 6.2.22
 #define CMD_PIXEL_FORMAT_SET 0x3A
 #define CMD_WRITE_MEMORY_CONTINUE 0x3C
 #define CMD_SET_TEAR_SCANLINE 0x44
@@ -48,6 +48,8 @@
 #define CMD_READ_ID_1 0xDA
 #define CMD_READ_ID_2 0xDB
 #define CMD_READ_ID_3 0xDC
+
+#define MEMORY_ACCESS_CONTROL_MY
 
 // Extended Command Set
 
@@ -104,6 +106,26 @@ static void LCD_1IN28_SendData_16Bit(uint16_t Data)
     SpiWriteByte(Data);
 }
 
+static void ConfigureMemoryAccessControl(
+	bool my, 
+	bool mx, 
+	bool mv, 
+	bool verticalRefreshOrder, 
+	bool useBgr, 
+	bool horizontalRefresh)
+{
+	LCD_1IN28_SendCommand(CMD_MEMORY_ACCESS_CONTROL);
+	// LCD_1IN28_SendData_8Bit(0x08);//Set as vertical screen
+	// LCD_1IN28_SendData_8Bit(0b00111000);// Rotate 90 degrees
+	LCD_1IN28_SendData_8Bit(
+		(my ? (1 << 7) : 0)
+		| (mx ? (1 << 6) : 0)
+		| (mv ? (1 << 5) : 0)
+		| (verticalRefreshOrder ? (1 << 4) : 0)
+		| (useBgr ? (1 << 3) : 0)
+		| (horizontalRefresh ? (1 << 2) : 0));
+}
+
 static void LCD_1IN28_InitReg(void)
 {
     LCD_1IN28_SendCommand(0xEF);
@@ -157,12 +179,10 @@ static void LCD_1IN28_InitReg(void)
 	LCD_1IN28_SendData_8Bit(0x00);
 	LCD_1IN28_SendData_8Bit(0x20);
 
-	LCD_1IN28_SendCommand(CMD_MEMORY_ACCESS_CONTROL);
-	LCD_1IN28_SendData_8Bit(0x08);//Set as vertical screen
+	ConfigureMemoryAccessControl(0, 0, 1, 1, 0, 0); // Rotate 90 degrees
 
 	LCD_1IN28_SendCommand(CMD_PIXEL_FORMAT_SET);			
 	LCD_1IN28_SendData_8Bit(0x05); 
-
 
 	LCD_1IN28_SendCommand(0x90);			
 	LCD_1IN28_SendData_8Bit(0x08);
@@ -347,25 +367,25 @@ static void LCD_1IN28_SetAttributes(LcdScreen* screen, ScanDirection scanDir)
 {
     //Get the screen scan direction
     screen->Attributes.ScanDir = scanDir;
-    uint8_t MemoryAccessReg = 0x08;
+    uint8_t scanDirRegister = 0x08;
 
     //Get GRAM and LCD width and height
     if (scanDir == ScanDirection_Horizontal) 
 	{
         screen->Attributes.Height = LCD_1IN28_HEIGHT;
         screen->Attributes.Width = LCD_1IN28_WIDTH;
-        MemoryAccessReg = 0Xc8;
+        scanDirRegister = 0xc8;
     } 
 	else 
 	{
         screen->Attributes.Height = LCD_1IN28_WIDTH;
         screen->Attributes.Width = LCD_1IN28_HEIGHT;
-        MemoryAccessReg = 0X68;
+        scanDirRegister = 0x68;
     }
 
-    // Set the read / write scan direction of the frame memory
+    // Set the read/write scan direction of the frame memory
     LCD_1IN28_SendCommand(0x36); //MX, MY, RGB mode
-	LCD_1IN28_SendData_8Bit(MemoryAccessReg);	//0x08 set RGB
+	LCD_1IN28_SendData_8Bit(scanDirRegister);	//0x08 set RGB
 }
 
 static void SetViewport(Screen* screen, uint16_t xStart, uint16_t yStart, uint16_t xEnd, uint16_t yEnd)
@@ -387,15 +407,15 @@ static void SetViewport(Screen* screen, uint16_t xStart, uint16_t yStart, uint16
     LCD_1IN28_SendCommand(0X2C);
 }
 
-static void Clear(Screen* screen, uint16_t color)
+static void Clear(Screen* screen, Color color)
 {
     uint16_t image[LCD_1IN28_WIDTH * LCD_1IN28_HEIGHT];
     
-	color = ByteHelper_Reverse16(color);
+	uint16_t pixelColor = Color_ToRgb565(color);
    
     for (uint16_t j = 0; j < LCD_1IN28_HEIGHT*LCD_1IN28_WIDTH; j++) 
     {
-        image[j] = color;
+        image[j] = pixelColor;
     }
     
     SetViewport(screen, 0, 0, LCD_1IN28_WIDTH, LCD_1IN28_HEIGHT);
@@ -416,10 +436,12 @@ static void SetBacklightPercentage(Screen* screen, uint8_t percentage)
 {
     LcdScreen* this = (LcdScreen*)screen;
 
+	this->CurrentBacklightPercentage = MIN(MAX(percentage, 0), 100);
+
     pwm_set_chan_level(
 		this->BacklightPwmSliceNumber, 
 		PWM_CHAN_B, 
-		MIN(MAX(percentage, 0), 100)); 
+		this->CurrentBacklightPercentage); 
 }
 
 static unsigned int GetWidth(Screen* screen)
@@ -432,7 +454,30 @@ static unsigned int GetHeight(Screen* screen)
 	return LCD_1IN28_HEIGHT; 
 }
 
-void LcdScreen_Init(LcdScreen* out, ScanDirection scanDirection)
+static void SetSleep(LcdScreen* screen, bool sleep)
+{
+    LCD_1IN28_SendCommand(sleep ? CMD_ENTER_SLEEP_MODE : CMD_SLEEP_OUT);
+
+	// Note from docs:
+	// "It will be necessary to wait 5 msec before sending next to command, 
+	// this is to allow time for the supply voltages and clock circuits to stabilize. 
+	// It will be necessary to wait 120 msec after sending Sleep Out command (when in Sleep In Mode) 
+	// before Sleep In command can be sent"
+	(*screen->Timer->WaitMilliseconds)(screen->Timer, 5);
+}
+
+
+static void SetIdleMode(LcdScreen* screen, bool sleep)
+{
+    LCD_1IN28_SendCommand(sleep ? CMD_IDLE_MODE_ON : CMD_IDLE_MODE_OFF);
+}
+
+static void SetDisplayEnabled(LcdScreen* screen, bool enable)
+{
+    LCD_1IN28_SendCommand(enable ? CMD_DISPLAY_ON : CMD_DISPLAY_OFF);
+}
+
+void LcdScreen_Init(Timer* timer, ScanDirection scanDirection, LcdScreen* out)
 {
     LcdScreen screen = 
     {
@@ -444,7 +489,11 @@ void LcdScreen_Init(LcdScreen* out, ScanDirection scanDirection)
 			.SetBacklightPercentage = SetBacklightPercentage,
 			.GetHeight = GetHeight,
 			.GetWidth = GetWidth
-        }
+        },
+		.SetSleep = SetSleep,
+		.SetIdleMode = SetIdleMode,
+		.SetDisplayEnabled = SetDisplayEnabled,
+		.Timer = timer
     };
 
     // LCD GPIO config
