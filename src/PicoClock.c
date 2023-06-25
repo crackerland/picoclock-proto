@@ -158,9 +158,27 @@ static void Dispose(AppLifecycle* app)
     free(this->TextureBuffer.PixelData);
 }
 
+static void TestLoop(AppResources* app)
+{
+    (*app->CanvasTexture->Draw)(app->CanvasTexture, 0, 0);
+}
+
 static void SetUp(AppResources* app)
 {
-    (*app->CanvasTexture->Clear)(app->CanvasTexture, Colors.Black);
+    // Red - good
+    // Green - bad (shows blue)
+    // Blue - bad (shows green)
+    (*app->CanvasTexture->Clear)(app->CanvasTexture, Colors.Cyan);
+
+// Test blocks of colors 
+
+    // Paint_DrawCircle(
+    //     app->CenterX, 
+    //     app->CenterY, 
+    //     (app->ScreenWidth / 2) - 1, 
+    //     Color_ToRgb565(Colors.Yellow), 
+    //     false, 
+    //     (Texture16*)app->CanvasTexture);
 }
 
 void App_Init(
@@ -180,6 +198,7 @@ void App_Init(
         .Lifecycle =
         {
             .Loop = Loop,
+            // .Loop = TestLoop,
             .Dispose = Dispose,
         },
         .Resources = 
@@ -227,14 +246,14 @@ void App_Init(
 
     SystemFontTextView_Init(
         &out->TextureBuffer,
-        Colors.Blue, 
+        Colors.Green, 
         Colors.Black, 
         &out->CanvasBufferRenderer.Base,
         &out->DateTextView);
 
     SystemFontTextView_Init(
         &out->TextureBuffer,
-        Colors.Red, 
+        Colors.Green, 
         Colors.Black, 
         &out->CanvasBufferRenderer.Base, 
         &out->TimeTextView);

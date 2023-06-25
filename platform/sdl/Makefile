@@ -31,8 +31,8 @@ OBJS = main.o \
 	src/SdlHelper.o \
 	src/SdlScreen.o
 
-# MAIN = ${BIN}/main
-MAIN = main
+MAIN = ${BIN}/main
+# MAIN = main
 
 # $(MAIN): $(OBJS)
 $(MAIN): $(OBJS) executable
