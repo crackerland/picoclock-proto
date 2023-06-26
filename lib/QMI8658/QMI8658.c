@@ -652,18 +652,21 @@ unsigned char QMI8658_init(i2c_inst_t* i2cInstance)
 		{
 
 			QMI8658_read_reg(QMI8658Register_WhoAmI, &QMI8658_chip_id, 1);
-			QMI8658_printf("QMI8658Register_WhoAmI = 0x%x\n", QMI8658_chip_id);
+			// QMI8658_printf("QMI8658Register_WhoAmI = 0x%x\n", QMI8658_chip_id);
 		}
+
 		if (QMI8658_chip_id == 0x05)
 		{
 			break;
 		}
+
 		iCount++;
 	}
+
 	QMI8658_read_reg(QMI8658Register_Revision, &QMI8658_revision_id, 1);
 	if (QMI8658_chip_id == 0x05)
 	{
-		QMI8658_printf("QMI8658_init slave=0x%x  \r\nQMI8658Register_WhoAmI=0x%x 0x%x\n", QMI8658_slave_addr, QMI8658_chip_id, QMI8658_revision_id);
+		// QMI8658_printf("QMI8658_init slave=0x%x  \r\nQMI8658Register_WhoAmI=0x%x 0x%x\n", QMI8658_slave_addr, QMI8658_chip_id, QMI8658_revision_id);
 		QMI8658_write_reg(QMI8658Register_Ctrl1, 0x60);
 		QMI8658_config.inputSelection = QMI8658_CONFIG_ACCGYR_ENABLE; // QMI8658_CONFIG_ACCGYR_ENABLE;
 		QMI8658_config.accRange = QMI8658AccRange_8g;
@@ -679,26 +682,26 @@ unsigned char QMI8658_init(i2c_inst_t* i2cInstance)
 		{
 			unsigned char read_data = 0x00;
 			QMI8658_read_reg(QMI8658Register_Ctrl1, &read_data, 1);
-			QMI8658_printf("QMI8658Register_Ctrl1=0x%x \n", read_data);
+			// QMI8658_printf("QMI8658Register_Ctrl1=0x%x \n", read_data);
 			QMI8658_read_reg(QMI8658Register_Ctrl2, &read_data, 1);
-			QMI8658_printf("QMI8658Register_Ctrl2=0x%x \n", read_data);
+			// QMI8658_printf("QMI8658Register_Ctrl2=0x%x \n", read_data);
 			QMI8658_read_reg(QMI8658Register_Ctrl3, &read_data, 1);
-			QMI8658_printf("QMI8658Register_Ctrl3=0x%x \n", read_data);
+			// QMI8658_printf("QMI8658Register_Ctrl3=0x%x \n", read_data);
 			QMI8658_read_reg(QMI8658Register_Ctrl4, &read_data, 1);
-			QMI8658_printf("QMI8658Register_Ctrl4=0x%x \n", read_data);
+			// QMI8658_printf("QMI8658Register_Ctrl4=0x%x \n", read_data);
 			QMI8658_read_reg(QMI8658Register_Ctrl5, &read_data, 1);
-			QMI8658_printf("QMI8658Register_Ctrl5=0x%x \n", read_data);
+			// QMI8658_printf("QMI8658Register_Ctrl5=0x%x \n", read_data);
 			QMI8658_read_reg(QMI8658Register_Ctrl6, &read_data, 1);
-			QMI8658_printf("QMI8658Register_Ctrl6=0x%x \n", read_data);
+			// QMI8658_printf("QMI8658Register_Ctrl6=0x%x \n", read_data);
 			QMI8658_read_reg(QMI8658Register_Ctrl7, &read_data, 1);
-			QMI8658_printf("QMI8658Register_Ctrl7=0x%x \n", read_data);
+			// QMI8658_printf("QMI8658Register_Ctrl7=0x%x \n", read_data);
 		}
 		//		QMI8658_set_layout(2);
 		return 1;
 	}
 	else
 	{
-		QMI8658_printf("QMI8658_init fail\n");
+		// QMI8658_printf("QMI8658_init fail\n");
 		QMI8658_chip_id = 0;
 		return 0;
 	}

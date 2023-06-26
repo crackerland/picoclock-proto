@@ -18,6 +18,7 @@
 #include "ScreenTextureRenderer.h"
 #include "BufferTextureRenderer.h"
 #include "Texture16.h"
+#include "pico/multicore.h"
 #include "hardware/adc.h"
 #include "hardware/spi.h"
 #include "hardware/i2c.h"
@@ -67,6 +68,21 @@ static PicoDateTimeProvider dateTimeProvider;
 static datetime_t pendingTime = { };
 static bool updateTime = false;
 
+static void SetTime(uint32_t time, datetime_t* out)
+{
+    time -= 60 * 60 * 4; // Offset UTC - 4 hours to make EST.
+    time_t nowBuffer = (time_t)time;
+    struct tm* parsed = localtime(&nowBuffer);
+
+    out->year = parsed->tm_year + 1900; // `tm_year` is the number of years since 1900.
+    out->month = parsed->tm_mon;
+    out->day = parsed->tm_mday;
+    out->dotw = parsed->tm_wday;
+    out->hour = parsed->tm_hour;
+    out->min = parsed->tm_min;
+    out->sec = parsed->tm_sec;
+}
+
 // RX interrupt handler
 void on_uart_rx() 
 {
@@ -76,17 +92,7 @@ void on_uart_rx()
     buffer[10] = '\0';
 
     int now = (int)atoi(buffer);
-    now -= 60 * 60 * 4; // Offset UTC - 4 hours to make EST.
-    time_t nowBuffer = (time_t)now;
-    struct tm* parsed = localtime(&nowBuffer);
-
-    pendingTime.year = parsed->tm_year + 1900; // `tm_year` is the number of years since 1900.
-    pendingTime.month = parsed->tm_mon;
-    pendingTime.day = parsed->tm_mday;
-    pendingTime.dotw = parsed->tm_wday;
-    pendingTime.hour = parsed->tm_hour;
-    pendingTime.min = parsed->tm_min;
-    pendingTime.sec = parsed->tm_sec;
+    SetTime(now, &pendingTime);
 
     updateTime = true;
 }
@@ -105,19 +111,15 @@ void on_uart_rx()
 //     ResetTimeout(app);
 // }
 
-int main(void)
+#define CORE_READY_FLAG 0xDEADBEEF
+
+static void Core1Main()
 {
-    stdio_init_all();
-
-    uart_init(uart0, 115200);
-    gpio_set_function(1, GPIO_FUNC_UART);
-
-    // And set up and enable the interrupt handlers
-    irq_set_exclusive_handler(UART0_IRQ, on_uart_rx);
-    irq_set_enabled(UART0_IRQ, true);
-
-    // Now enable the UART to send interrupts - RX only
-    uart_set_irq_enables(uart0, true, false);
+    multicore_fifo_push_blocking(CORE_READY_FLAG);
+    if (multicore_fifo_pop_blocking() != CORE_READY_FLAG)
+    {
+        return;
+    }
 
     PicoDateTimeProvider_Init(&dateTimeProvider);
 
@@ -141,8 +143,10 @@ int main(void)
     unsigned int tim_count = 0;
     while(1)
     {
-        if (updateTime)
+        if (multicore_fifo_rvalid())
         {
+            // Received message from other core.
+            SetTime(multicore_fifo_pop_blocking(), &pendingTime);
             if (!rtc_set_datetime(&pendingTime))
             {
                 printf("ERROR: Datetime invalid\n");
@@ -196,5 +200,44 @@ int main(void)
 
         (*app.Lifecycle.Loop)(&app.Resources);
         sleep_ms(100);
+    }
+}
+
+int main(void)
+{
+    stdio_init_all();
+    multicore_launch_core1(Core1Main);
+
+    // Wait for the second core to finish startup.
+    if (multicore_fifo_pop_blocking() != CORE_READY_FLAG)
+    {
+        return 1;
+    }
+
+    multicore_fifo_push_blocking(CORE_READY_FLAG);
+
+    // while (!stdio_usb_connected())
+    // {
+    //     tight_loop_contents();
+    // }
+
+    while(1)
+    {
+        char buffer[11] = { };
+        unsigned int next = 0;
+        while (next < 10)
+        {
+            char c = getc(stdin);
+            printf("%c", c);
+            buffer[next++] = c;
+        }
+
+        printf("\n");
+
+        buffer[10] = '\0';
+        int now = (int)atoi(buffer);
+
+        printf("Received time %d\n", now);
+        multicore_fifo_push_blocking(now);
     }
 }

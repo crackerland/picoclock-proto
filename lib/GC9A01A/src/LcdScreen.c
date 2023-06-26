@@ -437,7 +437,7 @@ void LcdScreen_Init(Timer* timer, ScanDirection scanDirection, LcdScreen* out)
     ConfigureSpi2DataControl();
     ConfigureUndocumentedCommands();
     ConfigureDisplayFunctionControl(false, true);
-	ConfigureMemoryAccessCo(ntrol(0, 1, 1, 0, 1, 0); // Rotate 90 degrees
+	ConfigureMemoryAccessControl(0, 1, 1, 0, 1, 0); // Rotate 90 degrees
 	ConfigureBitsPerPixel();
 
 	SendCommand(0x90);			

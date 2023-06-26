@@ -87,8 +87,9 @@ add_executable(main
   ./src/PicoBattery.c
   ./src/PicoTimer.c)
 
-pico_enable_stdio_usb(main 0)
-pico_enable_stdio_uart(main 1)
+set(PICO_STDIO_USB_CONNECT_WAIT_TIMEOUT_MS 1000)
+pico_enable_stdio_usb(main 1)
+pico_enable_stdio_uart(main 0)
 
 # create map/bin/hex/uf2 file etc.
 pico_add_extra_outputs(main)
@@ -96,6 +97,7 @@ pico_add_extra_outputs(main)
 target_link_libraries(main
 lcd QMI8658
 pico_stdlib
+pico_multicore
 hardware_spi
 hardware_i2c
 hardware_pwm
