@@ -216,23 +216,18 @@ int main(void)
 
     multicore_fifo_push_blocking(CORE_READY_FLAG);
 
-    // while (!stdio_usb_connected())
-    // {
-    //     tight_loop_contents();
-    // }
-
     while(1)
     {
         char buffer[11] = { };
         unsigned int next = 0;
         while (next < 10)
         {
-            char c = getc(stdin);
-            printf("%c", c);
-            buffer[next++] = c;
+            int c = PICO_ERROR_TIMEOUT;
+            if ((c = getchar_timeout_us(0)) != PICO_ERROR_TIMEOUT)
+            {
+                buffer[next++] = (char)c;
+            }
         }
-
-        printf("\n");
 
         buffer[10] = '\0';
         int now = (int)atoi(buffer);
