@@ -11,6 +11,8 @@
 #include "ScreenTextureRenderer.h"
 #include "BufferTextureRenderer.h"
 #include "PowerManager.h"
+#include "ColorConverter.h"
+#include "Painter.h"
 
 typedef struct AppResources
 {
@@ -23,6 +25,8 @@ typedef struct AppResources
     TextView* TimeTextView;
     TextView* BatteryTextView;
     PowerManager* PowerManager;
+    ColorConverter* ColorConverter;
+    Painter Painter;
     const unsigned int CenterX;
     const unsigned int CenterY;
     const unsigned int ScreenWidth;
@@ -57,6 +61,7 @@ extern void App_Init(
     Timer* timer, 
     DateTimeProvider* dateTimeProvider,
     PowerManager* powerManager,
+    ColorConverter* colorConverter,
     App* out);
 
 #endif

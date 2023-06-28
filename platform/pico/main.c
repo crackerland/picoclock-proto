@@ -8,6 +8,7 @@
 #include "PicoDateTimeProvider.h"
 #include "PicoPowerManager.h"
 #include "PicoBattery.h"
+#include "PicoColorConverter.h"
 #include "DefaultDateTimeFormatter.h"
 #include "pico/stdlib.h"
 #include "GC9A01A.h"
@@ -132,8 +133,11 @@ static void Core1Main()
     PicoPowerManager powerManager;
     PicoPowerManager_Init(&lcdScreen, &powerManager);
 
+    ColorConverter colorConverter;
+    PicoColorConverter_Init(&colorConverter);
+
     App app;
-    App_Init(&lcdScreen.Base, &timer.Base, &dateTimeProvider.Base, &powerManager.Base, &app);
+    App_Init(&lcdScreen.Base, &timer.Base, &dateTimeProvider.Base, &powerManager.Base, &colorConverter, &app);
 
     QMI8658_init(i2c1);
     uint32_t lastMovementTime = time_us_32(); 

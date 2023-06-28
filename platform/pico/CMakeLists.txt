@@ -81,11 +81,13 @@ include_directories(
 add_executable(main
   main.c
   ${ROOT}/src/PicoClock.c
+  ${ROOT}/src/Painter.c
   ./src/ScreenFramebuffer.c
   ./src/PicoDateTimeProvider.c
   ./src/PicoPowerManager.c
   ./src/PicoBattery.c
-  ./src/PicoTimer.c)
+  ./src/PicoTimer.c
+  ./src/PicoColorConverter.c)
 
 set(PICO_STDIO_USB_CONNECT_WAIT_TIMEOUT_MS 1000)
 pico_enable_stdio_usb(main 1)

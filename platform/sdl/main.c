@@ -34,6 +34,16 @@ static Battery* GetBattery(PowerManager* pm)
     return &noOpBattery;
 }
 
+static uint16_t Convert565(ColorConverter* _, Color color)
+{
+    return Color_ToRgb565(color);
+}
+
+static uint32_t Convert8888(ColorConverter* _, Color color)
+{
+    return 0;
+}
+
 int main(int argc, char** argv)
 {
     SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER);
@@ -54,8 +64,14 @@ int main(int argc, char** argv)
         .GetBattery = GetBattery
     };
 
+    ColorConverter colorConverter = 
+    {
+        .Convert565 = Convert565,
+        .Convert8888 = Convert8888,
+    };
+
     App app;
-    App_Init(&screen.Base, &timer.Base, &dateTimeProvider, &powerManager, &app);
+    App_Init(&screen.Base, &timer.Base, &dateTimeProvider, &powerManager, &colorConverter, &app);
 
     while (1)
     {
