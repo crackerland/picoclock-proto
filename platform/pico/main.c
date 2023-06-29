@@ -142,8 +142,8 @@ static void Core1Main()
     QMI8658_init(i2c1);
     uint32_t lastMovementTime = time_us_32(); 
     bool lowPowerMode = false;
-    float acc[3] = { };
-    float gyro[3] = { };
+    QMI8658_MotionCoordinates acc = { };
+    QMI8658_MotionCoordinates gyro = { };
     unsigned int tim_count = 0;
     while(1)
     {
@@ -162,9 +162,10 @@ static void Core1Main()
             updateTime = false;
         }
 
-        QMI8658_read_xyz(acc, gyro, &tim_count);
-        // float bat = (*battery.Base.Read)(&battery.Base);
-        // printf("Battery: %f\n", bat);
+        QMI8658_read_xyz(&acc, &gyro, &tim_count);
+
+        printf("ACC (%f, %f, %f) GYR (%f, %f, %f)\n", acc.X, acc.Y, acc.Z, gyro.X, gyro.Y, gyro.Z);
+
 // #define GYRMAX 300.0f
 // #define ACCMAX 500.0f
         // theme_bg_dynamic_mode seems to be a mode that requires greater force to register, such 
@@ -186,7 +187,7 @@ static void Core1Main()
         // }
 
         uint32_t currentTime = time_us_32();
-        if (acc[2] >= 0.0f)
+        if (acc.Z >= 0.0f)
         {
             lastMovementTime = currentTime; 
             if (lowPowerMode)

@@ -69,14 +69,14 @@ include_directories(${RPI_IO}/include)
 # include_directories(${RPI_ZLIB}/include)
 include_directories(${RPI_CHRONO}/include)
 
-add_subdirectory(${ROOT}/lib/lcd ./bin/lcd)
-add_subdirectory(${ROOT}/lib/QMI8658 ./bin/QMI8658)
-add_subdirectory(${ROOT}/lib/GC9A01A ./bin/GC9A01A)
+add_subdirectory(./lcd ./bin/lcd)
+add_subdirectory(./QMI8658 ./bin/QMI8658)
+add_subdirectory(./GC9A01A ./bin/GC9A01A)
 include_directories(
   ${ROOT}/include
-  ${ROOT}/lib/lcd
-  ${ROOT}/lib/GC9A01A/include
-  ${ROOT}/lib/QMI8658)
+  ./lcd
+  ./GC9A01A/include
+  ./QMI8658)
 
 add_executable(main
   main.c
