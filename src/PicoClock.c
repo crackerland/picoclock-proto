@@ -13,8 +13,31 @@
 
 extern _Colors Colors;
 
+static inline void HandleInput(PendingInput* pending)
+{
+    if (pending->Minus)
+    {
+        printf("Polled input: MINUS\n");
+    }
+
+    if (pending->Plus)
+    {
+        printf("Polled input: PLUS\n");
+    }
+
+    if (pending->Select)
+    {
+        printf("Polled input: SELECT\n");
+    }
+
+    PendingInput cleared = { };
+    memcpy(pending, &cleared, sizeof(PendingInput));
+}
+
 static void Loop(AppResources* app)
 { 
+    HandleInput(app->PendingInput);
+
     (*app->CanvasTexture->Clear)(app->CanvasTexture, Colors.Black);
     (*app->Painter.DrawCircle)(
         &app->Painter,
@@ -70,6 +93,24 @@ static void SetUp(AppResources* app)
     (*app->CanvasTexture->Clear)(app->CanvasTexture, Colors.Cyan);
 }
 
+static void Plus(UserInput* input)
+{
+    AppUserInput* this = (AppUserInput*)input;
+    this->Pending.Plus = true;
+}
+
+static void Minus(UserInput* input)
+{
+    AppUserInput* this = (AppUserInput*)input;
+    this->Pending.Minus = true;
+}
+
+static void Select(UserInput* input)
+{
+    AppUserInput* this = (AppUserInput*)input;
+    this->Pending.Select = true;
+}
+
 void App_Init(
     Screen* screen, 
     Timer* timer, 
@@ -90,6 +131,15 @@ void App_Init(
             .Loop = Loop,
             .Dispose = Dispose,
         },
+        .Input = 
+        {
+            .Base = 
+            {
+                .Minus = Minus,
+                .Plus = Plus,
+                .Select = Select
+            }
+        },
         .Resources = 
         {
             .Screen = screen,
@@ -104,7 +154,8 @@ void App_Init(
             .ScreenWidth = screenWidth,
             .ScreenHeight = screenHeight,
             .CenterX = screenWidth / 2,
-            .CenterY = screenHeight / 2
+            .CenterY = screenHeight / 2,
+            .PendingInput = &out->Input.Pending
         },
         .TextureBuffer = 
         {

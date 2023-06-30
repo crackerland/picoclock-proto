@@ -28,6 +28,12 @@
 
 extern _Colors Colors;
 
+#define CMD_NONE 0x0
+#define CMD_SET_TIME 0x1
+#define CMD_PLUS 0x2
+#define CMD_MINUS 0x3
+#define CMD_SELECT 0x4
+
 #define SAVE_STATE_CONTENT_SIZE (FLASH_PAGE_SIZE - 5)
 typedef struct SaveState
 {
@@ -35,6 +41,12 @@ typedef struct SaveState
     uint8_t Content[SAVE_STATE_CONTENT_SIZE];
 }
 SaveState;
+
+typedef struct CommandState
+{
+    uint8_t PendingCommand;
+}
+CommandState;
 
 static void SetUpGpioPin(uint16_t pin, bool direction)
 {
@@ -84,35 +96,50 @@ static void SetTime(uint32_t time, datetime_t* out)
     out->sec = parsed->tm_sec;
 }
 
-// RX interrupt handler
-void on_uart_rx() 
-{
-    uint8_t buffer[11] = { };
-    uart_read_blocking(uart0, buffer, sizeof(uint8_t) * 10);
-
-    buffer[10] = '\0';
-
-    int now = (int)atoi(buffer);
-    SetTime(now, &pendingTime);
-
-    updateTime = true;
-}
-
-// static void OnTimeout(Timer*, void*);
-// static void ResetTimeout(AppResources* resources)
-// {
-//     (*resources->Timer->Post)(resources->Timer, 5000000, resources, OnTimeout);
-// }
-
-// static bool sleep = false;
-// static void OnTimeout(Timer* timer, void* param)
-// {
-//     AppResources* app = (AppResources*)param;
-//     sleep = true;
-//     ResetTimeout(app);
-// }
-
 #define CORE_READY_FLAG 0xDEADBEEF
+
+static inline void HandleMessage(CommandState* commandState, UserInput* input)
+{
+    uint32_t message = multicore_fifo_pop_blocking();
+    if (commandState->PendingCommand == CMD_SET_TIME)
+    {
+        SetTime(message, &pendingTime);
+        if (!rtc_set_datetime(&pendingTime))
+        {
+            printf("ERROR: Datetime invalid\n");
+        }
+
+        // clk_sys is >2000x faster than clk_rtc, so datetime is not updated immediately when rtc_get_datetime() is called.
+        // tbe delay is up to 3 RTC clock cycles (which is 64us with the default clock settings)
+        sleep_us(64);
+        updateTime = false;
+    }
+    else
+    {
+        switch (message)
+        {
+            case CMD_SET_TIME:
+                // Set time requires an argument. Set the pending command and wait for the next message.
+                commandState->PendingCommand = CMD_SET_TIME;
+                return;
+
+            // The remaining commands are run immediately with no argument.
+            case CMD_PLUS:
+                (*input->Plus)(input);
+                break;
+
+            case CMD_MINUS:
+                (*input->Minus)(input);
+                break;
+
+            case CMD_SELECT:
+                (*input->Select)(input);
+                break;
+        }
+    }
+
+    commandState->PendingCommand = CMD_NONE;
+}
 
 static void Core1Main()
 {
@@ -144,50 +171,21 @@ static void Core1Main()
     bool lowPowerMode = false;
     QMI8658_MotionCoordinates acc = { };
     QMI8658_MotionCoordinates gyro = { };
-    unsigned int tim_count = 0;
+    unsigned int timeCounter = 0;
+    CommandState commandState = { .PendingCommand = CMD_NONE };
     while(1)
     {
         if (multicore_fifo_rvalid())
         {
-            // Received message from other core.
-            SetTime(multicore_fifo_pop_blocking(), &pendingTime);
-            if (!rtc_set_datetime(&pendingTime))
-            {
-                printf("ERROR: Datetime invalid\n");
-            }
-
-            // clk_sys is >2000x faster than clk_rtc, so datetime is not updated immediately when rtc_get_datetime() is called.
-            // tbe delay is up to 3 RTC clock cycles (which is 64us with the default clock settings)
-            sleep_us(64);
-            updateTime = false;
+            HandleMessage(&commandState, &app.Input.Base);
         }
 
-        QMI8658_read_xyz(&acc, &gyro, &tim_count);
+        QMI8658_read_xyz(&acc, &gyro, &timeCounter);
 
-        printf("ACC (%f, %f, %f) GYR (%f, %f, %f)\n", acc.X, acc.Y, acc.Z, gyro.X, gyro.Y, gyro.Z);
-
-// #define GYRMAX 300.0f
-// #define ACCMAX 500.0f
-        // theme_bg_dynamic_mode seems to be a mode that requires greater force to register, such 
-        // as when in full sleep mode.
-        // if (theme_bg_dynamic_mode == 1)
-        // {
-        //     if ((gyro[0] > -ACCMAX && gyro[0] < ACCMAX) && (gyro[1] > -ACCMAX && gyro[1] < ACCMAX) && (gyro[2] > -ACCMAX && gyro[2] < ACCMAX))
-        //     {
-        //         no_moveshake = true;
-        //     }
-        // }
-        // else
-        // {
-        // bool no_moveshake = false;
-        // if ((acc[0] > -GYRMAX && acc[0] < GYRMAX) && (acc[1] > -GYRMAX && acc[1] < GYRMAX))
-        // {
-        //     no_moveshake = true;
-        // }
-        // }
+        // printf("ACC (%f, %f, %f) GYR (%f, %f, %f)\n", acc.X, acc.Y, acc.Z, gyro.X, gyro.Y, gyro.Z);
 
         uint32_t currentTime = time_us_32();
-        if (acc.Z >= 0.0f)
+        if (acc.Y < -500) // Left wrist facing up.
         {
             lastMovementTime = currentTime; 
             if (lowPowerMode)
@@ -208,6 +206,52 @@ static void Core1Main()
     }
 }
 
+static void ReadBuffer(char* buffer, size_t length, bool* cancel)
+{
+    unsigned int next = 0;
+    while (next < length)
+    {
+        if (*cancel)
+        {
+            return;
+        }
+
+        int c = PICO_ERROR_TIMEOUT;
+        if ((c = getchar_timeout_us(0)) != PICO_ERROR_TIMEOUT)
+        {
+            buffer[next++] = (char)c;
+        }
+    }
+}
+
+static void HandleCommand(char command[4], bool* cancel)
+{
+    if (!strcmp("TIM", command))
+    {
+        printf("Set time\n");
+        multicore_fifo_push_blocking(CMD_SET_TIME);
+
+        char unixTimeBuffer[11] = { };
+        ReadBuffer(unixTimeBuffer, 10, cancel);
+        multicore_fifo_push_blocking((int)atoi(unixTimeBuffer));
+    }
+    else if (!strcmp("PLS", command))
+    {
+        printf("Plus\n");
+        multicore_fifo_push_blocking(CMD_PLUS);
+    }
+    else if (!strcmp("MIN", command))
+    {
+        printf("Minus\n");
+        multicore_fifo_push_blocking(CMD_MINUS);
+    }
+    else if (!strcmp("SEL", command))
+    {
+        printf("Select\n");
+        multicore_fifo_push_blocking(CMD_SELECT);
+    }
+}
+
 int main(void)
 {
     stdio_init_all();
@@ -223,21 +267,10 @@ int main(void)
 
     while(1)
     {
-        char buffer[11] = { };
-        unsigned int next = 0;
-        while (next < 10)
-        {
-            int c = PICO_ERROR_TIMEOUT;
-            if ((c = getchar_timeout_us(0)) != PICO_ERROR_TIMEOUT)
-            {
-                buffer[next++] = (char)c;
-            }
-        }
+        bool cancel = false;
+        char command[4] = { };
+        ReadBuffer(command, 3, &cancel);
 
-        buffer[10] = '\0';
-        int now = (int)atoi(buffer);
-
-        printf("Received time %d\n", now);
-        multicore_fifo_push_blocking(now);
+        HandleCommand(command, &cancel);
     }
 }

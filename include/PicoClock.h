@@ -13,6 +13,15 @@
 #include "PowerManager.h"
 #include "ColorConverter.h"
 #include "Painter.h"
+#include "UserInput.h"
+
+typedef struct PendingInput
+{
+    bool Plus;
+    bool Minus;
+    bool Select;
+}
+PendingInput;
 
 typedef struct AppResources
 {
@@ -26,6 +35,7 @@ typedef struct AppResources
     TextView* BatteryTextView;
     PowerManager* PowerManager;
     ColorConverter* ColorConverter;
+    PendingInput* PendingInput;
     Painter Painter;
     const unsigned int CenterX;
     const unsigned int CenterY;
@@ -41,8 +51,16 @@ typedef struct AppLifecycle
 }
 AppLifecycle;
 
+typedef struct AppUserInput
+{
+    UserInput Base;
+    PendingInput Pending;
+}
+AppUserInput;
+
 typedef struct App
 {
+    AppUserInput Input;
     AppLifecycle Lifecycle;
     AppResources Resources;
     DefaultDateTimeFormatter DateTimeFormatter;

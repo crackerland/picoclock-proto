@@ -97,7 +97,8 @@ pico_enable_stdio_uart(main 0)
 pico_add_extra_outputs(main)
 
 target_link_libraries(main
-lcd QMI8658
+lcd 
+QMI8658
 pico_stdlib
 pico_multicore
 hardware_spi
@@ -121,6 +122,5 @@ chrono
 add_custom_command(
   TARGET main POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy
-          ${CMAKE_CURRENT_BINARY_DIR}/main.uf2
-          ${CMAKE_CURRENT_BINARY_DIR}/../uf2/main.uf2
-)
+      ${CMAKE_CURRENT_BINARY_DIR}/main.uf2
+      ${CMAKE_CURRENT_BINARY_DIR}/../uf2/main.uf2)
