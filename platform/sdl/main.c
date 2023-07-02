@@ -4,6 +4,8 @@
 #include "SdlScreen.h"
 #include "SdlTimer.h"
 
+static bool printTime = false;
+
 static void GetDateTime(DateTimeProvider* provider, DateTime* out)
 {
     time_t now = time(NULL);
@@ -16,7 +18,10 @@ static void GetDateTime(DateTimeProvider* provider, DateTime* out)
     out->Minute = time->tm_min;
     out->Second = time->tm_sec;
 
-    printf("Time: %lu\n", (unsigned long)now);
+    if (printTime)
+    {
+        printf("Time: %lu\n", (unsigned long)now);
+    }
 }
 
 static float const Read(Battery* battery)
@@ -42,6 +47,29 @@ static uint16_t Convert565(ColorConverter* _, Color color)
 static uint32_t Convert8888(ColorConverter* _, Color color)
 {
     return 0;
+}
+
+static inline void HandleInput(SDL_KeyboardEvent* event, UserInput* input) 
+{
+    switch (event->keysym.sym)
+    {
+        case SDLK_RIGHT:
+            (*input->Plus)(input);
+            break;
+
+        case SDLK_LEFT:
+            (*input->Minus)(input);
+            break;
+
+        case SDLK_RETURN:
+            (*input->Select)(input);
+            break;
+
+        case SDLK_SPACE:
+        case SDLK_t:
+            printTime = !printTime;
+            break;
+    }
 }
 
 int main(int argc, char** argv)
@@ -83,6 +111,10 @@ int main(int argc, char** argv)
                 case SDL_QUIT:
                     (*app.Lifecycle.Dispose)(&app.Lifecycle);
                     return 0;
+
+                case SDL_KEYDOWN:
+                    HandleInput(&e.key, &app.Input.Base);
+                    break;
             }
         }
 
