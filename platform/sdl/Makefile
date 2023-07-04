@@ -18,8 +18,11 @@ CFLAGS = -std=c99 $(OPTIMIZATION) \
     -Werror=sign-compare -Werror=int-conversion -Werror=return-type -Werror=format -Werror=format-extra-args -Werror=implicit-function-declaration -Werror=overflow -Werror=unused-value -Werror=incompatible-pointer-types \
     -Wno-unused-function -Wno-unused-parameter -Wno-switch \
     -fdiagnostics-color=always \
-	-I${SDL}/include/SDL2 -I${SDL_IMG}/include/SDL2 -I${ROOT_SRC}/core/include -I${ROOT_SRC}/graphics/include -I${ROOT_SRC}/filesystem/include \
-	-Iinclude -I${ROOT}/include -I${ROOT_SRC}/chrono/include -I${ROOT_SRC}/peripherals/include -I${ROOT_SRC}/font/include -I${ROOT_SRC}/zlib/include -I${ROOT_SRC}/json/include -I${ROOT_SRC}/io/include
+	-I${SDL}/include/SDL2 -I${SDL_IMG}/include/SDL2 \
+	-I${ROOT_SRC}/core/include -I${ROOT_SRC}/graphics/include -I${ROOT_SRC}/filesystem/include -I${ROOT}/include \
+	-I${ROOT_SRC}/chrono/include -I${ROOT_SRC}/peripherals/include -I${ROOT_SRC}/font/include -I${ROOT_SRC}/zlib/include \
+	-I${ROOT_SRC}/json/include -I${ROOT_SRC}/io/include \
+	-Iinclude 
 
 LDFLAGS = -static -L${LIB} -L${SDL}/lib -L${SDL_IMG}/lib -L/msys64/mingw64/lib -L/msys64/mingw64/x86_64-w64-mingw32/lib
 LDLIBS = -lchrono -lgraphics -lfilesystem -lfont -ljson -lio -lcore -lzlib -lmingw32 -lSDL2_image -lSDL2main -lSDL2 -mwindows -mconsole -Wl,--no-undefined -Wl,--dynamicbase -Wl,--nxcompat -Wl,--high-entropy-va -lm -ldinput8 -ldxguid -ldxerr8 -luser32 -lgdi32 -lwinmm -limm32 -lole32 -loleaut32 -lshell32 -lsetupapi -lversion -luuid -static-libgcc
