@@ -2,6 +2,9 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "PicoClock.h"
+#include "FramebufferScreen.h"
+#include "SystemTimerDateTimeProvider.h"
 #include "BcmBoard.h"
 #include "RpiDma.h"
 #include "RpiBase.h"
@@ -56,27 +59,63 @@ void End()
     while (1) {}
 }
 
-void kernel_main(unsigned int r0, unsigned int r1, unsigned int atags)
+static void InitializeBoard(BcmBoardImpl* boardImpl)
 {
-    BcmBoardImpl boardImpl;
-    BcmBoard_Init(&boardImpl);
-    BcmBoard* board = &boardImpl.Base;
+    BcmBoard_Init(boardImpl);
+    BcmBoard* board = &boardImpl->Base;
 
-    (*boardImpl.Interrupts.Base.EnableInterrupts)(&boardImpl.Interrupts.Base);
+    (*boardImpl->Interrupts.Base.EnableInterrupts)(&boardImpl->Interrupts.Base);
 
     // Enable printf.
     Uart* uart = (*board->GetUart)(board);
     (*uart->Enable)(uart, 115200, UartBitMode_8Bit);
 
-    ReadWriteDelegate consoleWriteDelegate = { .Handle = PrintToConsole, .UserData = &boardImpl.Uart.Base };
+    ReadWriteDelegate consoleWriteDelegate = { .Handle = PrintToConsole, .UserData = &boardImpl->Uart.Base };
     CStubs_AddWriteHandler(&consoleWriteDelegate);
 
-    ReadWriteDelegate consoleReadDelegate = { .Handle = ReadFromConsole, .UserData = &boardImpl.Uart.Base };
+    ReadWriteDelegate consoleReadDelegate = { .Handle = ReadFromConsole, .UserData = &boardImpl->Uart.Base };
     CStubs_AddReadHandler(&consoleReadDelegate);
 
     // Set full CPU speed.
     ArmClock* armClock = (*board->GetArmClock)(board);
     (*armClock->SetClockRate)(armClock, (*armClock->GetMaxClockRate)(armClock));
+}
+
+static const float Battery_Read(Battery* battery)
+{
+    return 4.2;
+}
+
+Battery battery = { .Read = Battery_Read };
+
+static void PowerManager_Sleep(PowerManager* powerManager)
+{
+}
+
+static void PowerManager_WakeUp(PowerManager* powerManager)
+{
+}
+
+static Battery* PowerManager_GetBattery(PowerManager* powerManager)
+{
+    return &battery;
+}
+
+static uint16_t Convert565(ColorConverter* _, Color color)
+{
+    return Color_ToRgb565(color);
+}
+
+static uint32_t Convert8888(ColorConverter* _, Color color)
+{
+    return 0;
+}
+
+void kernel_main(unsigned int r0, unsigned int r1, unsigned int atags)
+{
+    BcmBoardImpl boardImpl;
+    InitializeBoard(&boardImpl);
+    BcmBoard* board = &boardImpl.Base;
 
     Display display =
     {
@@ -85,7 +124,7 @@ void kernel_main(unsigned int r0, unsigned int r1, unsigned int atags)
             .Width = 320,
             .Height = 240,
         },
-        .PixelFormat = FramebufferPixelFormat_ARGB32
+        .PixelFormat = FramebufferPixelFormat_RGB16
     };
 
     Framebuffer* framebuffer = (*board->CreateFramebuffer)(
@@ -101,10 +140,31 @@ void kernel_main(unsigned int r0, unsigned int r1, unsigned int atags)
         &fontPainter);
 
     Timer* timer = (*board->GetSystemTimer)(board);
-    // uint32_t time = (*timer->GetCurrentCounter)(timer);
+
+    FramebufferScreen screen;
+    FramebufferScreen_Init(framebuffer, &screen);
+
+    SystemTimerDateTimeProvider dateTimeProvider;
+    SystemTimerDateTimeProvider_Init(timer, &dateTimeProvider);
+
+    PowerManager powerManager =
+    {
+        .Sleep = PowerManager_Sleep,
+        .WakeUp = PowerManager_WakeUp,
+        .GetBattery = PowerManager_GetBattery
+    };
+
+    ColorConverter colorConverter = 
+    {
+        .Convert565 = Convert565,
+        .Convert8888 = Convert8888,
+    };
+
+    App app;
+    App_Init(&screen.Base, timer, &dateTimeProvider.Base, &powerManager, &colorConverter, &app);
     while(1)
     {
-        printf("Test \n");
+        (*app.Lifecycle.Loop)(&app.Resources);
         (*timer->WaitMilliseconds)(timer, 1000);
     }
 }

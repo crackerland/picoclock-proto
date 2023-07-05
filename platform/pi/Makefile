@@ -20,14 +20,19 @@ CFLAGS = -std=c99 \
     -Wno-unused-function -Wno-unused-parameter \
     -fdiagnostics-color=always \
 	-I${PI_PLATFORM}/runtime/include -I${PI_PLATFORM}/bcm2835/include \
-	-I${ROOT_SRC}/core/include -I${ROOT_SRC}/graphics/include -I${ROOT_SRC}/filesystem/include -I${ROOT_SRC}/peripherals/include \
-	-I${ROOT_SRC}/font/include -I${ROOT_SRC}/io/include \
+	-I${ROOT_SRC}/core/include -I${ROOT_SRC}/graphics/include -I${ROOT_SRC}/filesystem/include \
+	-I${ROOT_SRC}/chrono/include -I${ROOT_SRC}/peripherals/include -I${ROOT_SRC}/font/include -I${ROOT_SRC}/io/include \
+	-I${ROOT}/include -Iinclude \
 	-DRPI_ZERO 
 
 LDFLAGS = -static -L${LIB}
-LDLIBS = -lpi -lbcm2835 -lgraphics -lfilesystem -lcore -lfont -lm -lruntime
+LDLIBS = -lchrono -lgraphics -lfilesystem -lfont -lio -lpi -lm -lbcm2835 -lruntime -lcore 
 
-OBJS = main.o
+OBJS = main.o \
+	${ROOT}/src/PicoClock.o \
+	${ROOT}/src/Painter.o \
+	./src/FramebufferScreen.o \
+	./src/SystemTimerDateTimeProvider.o
 
 MAIN = ${BIN}/kernel
 
@@ -38,10 +43,11 @@ $(OBJS): depend
 depend:
 	$(MAKE) -C ${PI_PLATFORM} \
 	&& $(MAKE) -C ${ROOT_SRC}/core \
-	&& $(MAKE) -C ${ROOT_SRC}/io \
 	&& $(MAKE) -C ${ROOT_SRC}/filesystem \
+	&& $(MAKE) -C ${ROOT_SRC}/io \
 	&& $(MAKE) -C ${ROOT_SRC}/graphics \
-	&& $(MAKE) -C ${ROOT_SRC}/font
+	&& $(MAKE) -C ${ROOT_SRC}/font \
+	&& $(MAKE) -C ${ROOT_SRC}/chrono
 
 elf: $(OBJS)
 	$(CC) $(CFLAGS) $(OBJS) $(LDFLAGS) $(LDLIBS) -o ${BIN}/kernel.elf
@@ -56,8 +62,10 @@ clean-all: clean
 	$(MAKE) -C ${PI_PLATFORM} clean \
 	&& $(MAKE) -C ${ROOT_SRC}/core clean \
 	&& $(MAKE) -C ${ROOT_SRC}/filesystem clean \
+	&& $(MAKE) -C ${ROOT_SRC}/io clean \
+	&& $(MAKE) -C ${ROOT_SRC}/graphics clean \
 	&& $(MAKE) -C ${ROOT_SRC}/font clean \
-	&& $(MAKE) -C ${ROOT_SRC}/graphics clean
+	&& $(MAKE) -C ${ROOT_SRC}/chrono clean 
 
 clean:
 	$(RM) $(OBJS) $(MAIN) ${BIN}/kernel.elf ${BIN}/kernel.img
