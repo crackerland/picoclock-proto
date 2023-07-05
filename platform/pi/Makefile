@@ -25,7 +25,7 @@ CFLAGS = -std=c99 \
 	-DRPI_ZERO 
 
 LDFLAGS = -static -L${LIB}
-LDLIBS = -lpi -lbcm2835 -lgraphics -lfilesystem -lcore -lfont -lm
+LDLIBS = -lpi -lbcm2835 -lgraphics -lfilesystem -lcore -lfont -lm -lruntime
 
 OBJS = main.o
 
@@ -48,7 +48,7 @@ elf: $(OBJS)
 
 # Strips the extra data from the elf and converts it to the img.
 img: elf
-	arm-none-eabi-objcopy kernel.elf -O binary ${BIN}/kernel.img
+	arm-none-eabi-objcopy ${BIN}/kernel.elf -O binary ${BIN}/kernel.img
 
 .PHONY: clean clean-all
 
@@ -60,4 +60,4 @@ clean-all: clean
 	&& $(MAKE) -C ${ROOT_SRC}/graphics clean
 
 clean:
-	$(RM) $(OBJS) $(MAIN) kernel.elf ${BIN}/kernel.img
+	$(RM) $(OBJS) $(MAIN) ${BIN}/kernel.elf ${BIN}/kernel.img
