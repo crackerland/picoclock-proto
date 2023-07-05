@@ -262,7 +262,6 @@ enum QMI8658_Ctrl9Command
     QMI8658_Ctrl9_Cmd_AccelHostDeltaOffset = 0x09,
     QMI8658_Ctrl9_Cmd_GyroHostDeltaOffset = 0x0A,
     QMI8658_Ctrl9_Cmd_Dbg_WoM_Data_Enable = 0xF8,
-
 };
 
 enum QMI8658_LpfConfig

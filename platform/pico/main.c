@@ -198,6 +198,7 @@ static void Core1Main()
         {
             // 5 secs. ellapsed without movement.
             (*lcdScreen.Base.SetBacklightPercentage)(&lcdScreen.Base, 5);
+            QMI8658_enableWakeOnMotion();
             lowPowerMode = true;
         }
 

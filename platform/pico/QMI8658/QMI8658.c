@@ -8,6 +8,12 @@
 
 #define QMI8658_UINT_MG_DPS
 
+#define IMU_INT1_GPIO_PIN 23
+#define IMU_INT2_GPIO_PIN 24
+
+#define STATUS1_WOM 0b100
+#define STATUS1_CTRL9 0b0
+
 enum
 {
 	AXIS_X = 0,
@@ -36,6 +42,7 @@ void DEV_I2C_Write_Byte(uint8_t addr, uint8_t reg, uint8_t Value)
     uint8_t data[2] = {reg, Value};
     i2c_write_blocking(I2C_PORT, addr, data, 2, false);
 }
+
 void DEV_I2C_Write_Register(uint8_t addr, uint8_t reg, uint16_t value)
 {
 
@@ -45,6 +52,7 @@ void DEV_I2C_Write_Register(uint8_t addr, uint8_t reg, uint16_t value)
     tmpi[2] = value & 0xFF;
     DEV_I2C_Write_nByte(addr, tmpi, 3);
 }
+
 void DEV_I2C_Write_nByte(uint8_t addr, uint8_t *pData, uint32_t Len)
 {
     i2c_write_blocking(I2C_PORT, addr, pData, Len, false);
@@ -59,12 +67,12 @@ uint8_t DEV_I2C_Read_Byte(uint8_t addr, uint8_t reg)
 }
 void DEV_I2C_Read_Register(uint8_t addr, uint8_t reg, uint16_t *value)
 {
-
     uint8_t tmpi[2];
     i2c_write_blocking(I2C_PORT, addr, &reg, 1, true); // true to keep master control of bus
     i2c_read_blocking(I2C_PORT, addr, tmpi, 2, false);
     *value = (((uint16_t)tmpi[0] << 8) | (uint16_t)tmpi[1]);
 }
+
 void DEV_I2C_Read_nByte(uint8_t addr, uint8_t reg, uint8_t *pData, uint32_t Len)
 {
     i2c_write_blocking(I2C_PORT, addr, &reg, 1, true);
@@ -76,6 +84,29 @@ uint16_t DEC_ADC_Read(void)
     return adc_read();
 }
 
+static void OnInterrupt1(uint gpio, uint32_t eventMask)
+{
+	if (gpio != IMU_INT1_GPIO_PIN)
+	{
+		// Not sure where this came from.
+		return;
+	}
+
+	// Reset the status by reading.
+	unsigned char status = QMI8658_readStatus1();
+
+	printf("IMU_INT1 received. Status: 0x%#02X\n", status);
+
+	if (status & STATUS1_CTRL9)
+	{
+		// CTRL 9 function executed.
+	}
+
+	if (status & STATUS1_WOM)
+	{
+		// Wake on Motion event.
+	}
+}
 
 unsigned char QMI8658_write_reg(unsigned char reg, unsigned char value)
 {
@@ -523,20 +554,46 @@ void QMI8658_read_mag(float mag[3]){
 
 void QMI8658_enableWakeOnMotion(void)
 {
-	unsigned char womCmd[3];
-	enum QMI8658_Interrupt interrupt = QMI8658_Int1;
-	enum QMI8658_InterruptState initialState = QMI8658State_low;
-	enum QMI8658_WakeOnMotionThreshold threshold = QMI8658WomThreshold_low;
-	unsigned char blankingTime = 0x04;
-	const unsigned char blankingTimeMask = 0x3F;
+	// QMI8658C doc 9.4 "Configuration Procedure":
+	// The host processor is responsible for all configurations
+	// necessary to put the QMI8658C into WoM mode. The
+	// specific sequence of operations performed by the host
+	// processor to enable WoM is shown in Figure 10
+	// (Figure 10)
+	// 1. [Disable sensors. (Write 0x00 to CTRL7)]
+	// 2. [Set Accelerometer sample rate and scale (Write CTRL2)]
+	// 3. [Set Wake on Motion (WoM) Threshold in CAL1_L; select interrupt, polarity and blanking time in CAL1_H]
+	// 4. [Execute CTRL9 command to configure WoM mode]
+	// 5. [Set Accelerometer enable bit in CTRL7]
+
+	// 1. Disable sensors.
 	QMI8658_enableSensors(QMI8658_CTRL7_DISABLE_ALL);
+
+	// 2. Set accelerometer sample rate and scale.
 	QMI8658_config_acc(QMI8658AccRange_2g, QMI8658AccOdr_LowPower_21Hz, QMI8658Lpf_Disable, QMI8658St_Disable);
-	womCmd[0] = QMI8658Register_Cal1_L; // WoM Threshold: absolute value in mg (with 1mg/LSB resolution)
-	womCmd[1] = threshold;
-	womCmd[2] = (unsigned char)interrupt | (unsigned char)initialState | (blankingTime & blankingTimeMask);
-	QMI8658_write_reg(QMI8658Register_Cal1_L, womCmd[1]);
-	QMI8658_write_reg(QMI8658Register_Cal1_H, womCmd[2]);
+
+	// 3. (A) Set wake on motion threshold.
+	enum QMI8658_WakeOnMotionThreshold threshold = QMI8658WomThreshold_low;
+
+	// WoM Threshold: absolute value in mg (with 1mg/LSB resolution).
+	QMI8658_write_reg(QMI8658Register_Cal1_L, (unsigned char)QMI8658WomThreshold_low); 
+
+	// 3. (B) Select interrupt, polarity, and blanking time.
+	const unsigned char blankingTimeMask = 0b00111111;
+
+	// CAL1_H register:
+	// 7:6 Interrupt select
+	// 0:5 Interrupt blanking time (in number of accelerometer samples)
+	// ------
+	// Setting interrupt select to 00 - INT1 with initial value 0.
+	// Setting blanking time to 4 samples.
+	QMI8658_write_reg(
+		QMI8658Register_Cal1_H, 
+		(unsigned char)QMI8658_Int1 | (unsigned char)QMI8658State_low | (0x04 & blankingTimeMask));
+
+	// 4. Enable WOM through the matching CTRL9 command.
 	QMI8658_write_reg(QMI8658Register_Ctrl9, QMI8658_Ctrl9_Cmd_WoM_Setting);
+
 	sleep_ms(5);
 	printf("WOM enabled\n");
 	QMI8658_enableSensors(QMI8658_CTRL7_ACC_ENABLE);
@@ -622,7 +679,8 @@ void QMI8658_Config_apply(struct QMI8658Config const *config)
 	QMI8658_enableSensors(fisSensors);
 }
 
-unsigned char QMI8658_reset(void){
+unsigned char QMI8658_reset(void)
+{
 	QMI8658_write_reg(QMI8658_Reset, 0x01);
 }
 
@@ -634,6 +692,18 @@ unsigned char QMI8658_init(i2c_inst_t* i2cInstance)
     gpio_set_function(DEV_SCL_PIN, GPIO_FUNC_I2C);
     gpio_pull_up(DEV_SDA_PIN);
     gpio_pull_up(DEV_SCL_PIN);
+
+	gpio_init(IMU_INT1_GPIO_PIN);
+	gpio_set_dir(IMU_INT1_GPIO_PIN, GPIO_IN);
+
+	// TODO: Do we want a pull down?
+	gpio_pull_down(IMU_INT1_GPIO_PIN);
+
+	gpio_set_irq_enabled_with_callback(
+		IMU_INT1_GPIO_PIN, 
+		GPIO_IRQ_EDGE_RISE, 
+		true, 
+		OnInterrupt1);
 
 	QMI8658_reset();
 	sleep_ms(100);
