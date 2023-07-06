@@ -20,6 +20,7 @@ typedef struct PendingInput
     bool Plus;
     bool Minus;
     bool Select;
+    bool Sleep;
 }
 PendingInput;
 

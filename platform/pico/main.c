@@ -33,6 +33,13 @@ extern _Colors Colors;
 #define CMD_PLUS 0x2
 #define CMD_MINUS 0x3
 #define CMD_SELECT 0x4
+#define CMD_SLEEP 0x5
+
+#define CMD_TEXT_SET_TIME "TIM"
+#define CMD_TEXT_PLUS "PLS"
+#define CMD_TEXT_MINUS "MIN"
+#define CMD_TEXT_SELECT "SEL"
+#define CMD_TEXT_SLEEP "SLP"
 
 #define SAVE_STATE_CONTENT_SIZE (FLASH_PAGE_SIZE - 5)
 typedef struct SaveState
@@ -135,6 +142,10 @@ static inline void HandleMessage(CommandState* commandState, UserInput* input)
             case CMD_SELECT:
                 (*input->Select)(input);
                 break;
+
+            case CMD_SLEEP:
+                (*input->Sleep)(input);
+                break;
         }
     }
 
@@ -157,8 +168,11 @@ static void Core1Main()
     LcdScreen lcdScreen = { };
     LcdScreen_Init(&timer.Base, ScanDirection_Horizontal, &lcdScreen);
 
+    Qmi8658 module;
+    QMI8658_init(i2c1, &module);
+
     PicoPowerManager powerManager;
-    PicoPowerManager_Init(&lcdScreen, &powerManager);
+    PicoPowerManager_Init(&lcdScreen, &module, &powerManager);
 
     ColorConverter colorConverter;
     PicoColorConverter_Init(&colorConverter);
@@ -166,7 +180,6 @@ static void Core1Main()
     App app;
     App_Init(&lcdScreen.Base, &timer.Base, &dateTimeProvider.Base, &powerManager.Base, &colorConverter, &app);
 
-    QMI8658_init(i2c1);
     uint32_t lastMovementTime = time_us_32(); 
     bool lowPowerMode = false;
     QMI8658_MotionCoordinates acc = { };
@@ -191,14 +204,13 @@ static void Core1Main()
             if (lowPowerMode)
             {
                 (*lcdScreen.Base.SetBacklightPercentage)(&lcdScreen.Base, 90);
-                lowPowerMode = true;
+                lowPowerMode = false;
             }
         }
         else if (currentTime - lastMovementTime > 5000000)
         {
             // 5 secs. ellapsed without movement.
             (*lcdScreen.Base.SetBacklightPercentage)(&lcdScreen.Base, 5);
-            QMI8658_enableWakeOnMotion();
             lowPowerMode = true;
         }
 
@@ -227,7 +239,7 @@ static void ReadBuffer(char* buffer, size_t length, bool* cancel)
 
 static void HandleCommand(char command[4], bool* cancel)
 {
-    if (!strcmp("TIM", command))
+    if (!strcmp(CMD_TEXT_SET_TIME, command))
     {
         printf("Set time\n");
         multicore_fifo_push_blocking(CMD_SET_TIME);
@@ -236,20 +248,25 @@ static void HandleCommand(char command[4], bool* cancel)
         ReadBuffer(unixTimeBuffer, 10, cancel);
         multicore_fifo_push_blocking((int)atoi(unixTimeBuffer));
     }
-    else if (!strcmp("PLS", command))
+    else if (!strcmp(CMD_TEXT_PLUS, command))
     {
         printf("Plus\n");
         multicore_fifo_push_blocking(CMD_PLUS);
     }
-    else if (!strcmp("MIN", command))
+    else if (!strcmp(CMD_TEXT_MINUS, command))
     {
         printf("Minus\n");
         multicore_fifo_push_blocking(CMD_MINUS);
     }
-    else if (!strcmp("SEL", command))
+    else if (!strcmp(CMD_TEXT_SELECT, command))
     {
         printf("Select\n");
         multicore_fifo_push_blocking(CMD_SELECT);
+    }
+    else if (!strcmp(CMD_TEXT_SLEEP, command))
+    {
+        printf("Sleep\n");
+        multicore_fifo_push_blocking(CMD_SLEEP);
     }
 }
 

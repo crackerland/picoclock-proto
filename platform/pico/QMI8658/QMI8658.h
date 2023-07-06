@@ -63,8 +63,11 @@
 #define QMI8658_CONFIG_ACCGYRMAG_ENABLE (QMI8658_CONFIG_ACC_ENABLE | QMI8658_CONFIG_GYR_ENABLE | QMI8658_CONFIG_MAG_ENABLE)
 #define QMI8658_CONFIG_AEMAG_ENABLE (QMI8658_CONFIG_AE_ENABLE | QMI8658_CONFIG_MAG_ENABLE)
 
-#define QMI8658_STATUS1_CMD_DONE (0x01)
-#define QMI8658_STATUS1_WAKEUP_EVENT (0x04)
+// CTRL9 command completed.
+#define QMI8658_STATUS1_CTRL9_CMD_DONE (0b1)
+
+// WOM wake up.
+#define QMI8658_STATUS1_WAKEUP_EVENT (0b100)
 
 enum QMI8658Register
 {
@@ -513,11 +516,18 @@ typedef struct QMI8658_MotionCoordinates
 }
 QMI8658_MotionCoordinates;
 
+typedef struct Qmi8658
+{
+    bool Sleeping;
+    bool WakeOnMotionEnabled;
+}
+Qmi8658;
+
 #define QMI8658_Reset 0x60
 
 extern unsigned char QMI8658_write_reg(unsigned char reg, unsigned char value);
 extern unsigned char QMI8658_read_reg(unsigned char reg, unsigned char *buf, unsigned short len);
-extern unsigned char QMI8658_init(i2c_inst_t* i2cInstance);
+extern unsigned char QMI8658_init(i2c_inst_t* i2cInstance, Qmi8658* out);
 extern unsigned char QMI8658_reset(void);
 extern void QMI8658_reenable();
 extern void QMI8658_Config_apply(struct QMI8658Config const *config);
@@ -531,8 +541,8 @@ extern void QMI8658_read_mag(float mag[3]);
 extern unsigned char QMI8658_readStatus0(void);
 extern unsigned char QMI8658_readStatus1(void);
 extern float QMI8658_readTemp(void);
-extern void QMI8658_enableWakeOnMotion(void);
-extern void QMI8658_disableWakeOnMotion(void);
+extern void QMI8658_enableWakeOnMotion(Qmi8658* module);
+extern void QMI8658_disableWakeOnMotion(Qmi8658* module);
 
 void DEV_I2C_Write_Byte(uint8_t addr, uint8_t reg, uint8_t Value);
 void DEV_I2C_Write_Register(uint8_t addr, uint8_t reg, uint16_t value);

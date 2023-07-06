@@ -13,7 +13,7 @@
 
 extern _Colors Colors;
 
-static inline void HandleInput(PendingInput* pending)
+static inline void HandleInput(PendingInput* pending, AppResources* app)
 {
     if (pending->Minus)
     {
@@ -30,13 +30,19 @@ static inline void HandleInput(PendingInput* pending)
         printf("Polled input: SELECT\n");
     }
 
+    if (pending->Sleep)
+    {
+        printf("Polled input: SLEEP\n");
+        (*app->PowerManager->Sleep)(app->PowerManager);
+    }
+
     PendingInput cleared = { };
     memcpy(pending, &cleared, sizeof(PendingInput));
 }
 
 static void Loop(AppResources* app)
 { 
-    HandleInput(app->PendingInput);
+    HandleInput(app->PendingInput, app);
 
     (*app->CanvasTexture->Clear)(app->CanvasTexture, Colors.Black);
     (*app->Painter.DrawCircle)(
@@ -111,6 +117,12 @@ static void Select(UserInput* input)
     this->Pending.Select = true;
 }
 
+static void Sleep(UserInput* input)
+{
+    AppUserInput* this = (AppUserInput*)input;
+    this->Pending.Sleep = true;
+}
+
 void App_Init(
     Screen* screen, 
     Timer* timer, 
@@ -137,7 +149,8 @@ void App_Init(
             {
                 .Minus = Minus,
                 .Plus = Plus,
-                .Select = Select
+                .Select = Select,
+                .Sleep = Sleep
             }
         },
         .Resources = 
