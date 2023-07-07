@@ -31,7 +31,6 @@ typedef struct
 {
     enum QMI8658Register Register;
     uint8_t Value;
-    bool Execute;
 }
 CalibrationRegisterData;
 
@@ -39,14 +38,6 @@ typedef struct
 {
     CalibrationRegisterData Registers[8];
     unsigned int RegisterCount;
-    // CalibrationRegisterData Cal1Lo;
-    // CalibrationRegisterData Cal1Hi;
-    // CalibrationRegisterData Cal2Lo;
-    // CalibrationRegisterData Cal2Hi;
-    // CalibrationRegisterData Cal3Lo;
-    // CalibrationRegisterData Cal3Hi;
-    // CalibrationRegisterData Cal4Lo;
-    // CalibrationRegisterData Cal4Hi;
 }
 CalibrationData;
 
@@ -106,7 +97,7 @@ uint16_t DEC_ADC_Read(void)
 }
 
 struct InterruptCallback;
-typedef void (*InterruptCallbackHandler)(struct InterruptCallback* callback, uint gpio, uint32_t eventMask);
+typedef void (*InterruptCallbackHandler)(struct InterruptCallback* callback, uint8_t status);
 
 typedef struct InterruptCallback
 {
@@ -149,6 +140,28 @@ static void AddInterrupt1Callback(InterruptCallback* callback)
     }
 }
 
+static void RemoveInterruptCallback(InterruptCallback* callback)
+{
+    if (interrupt1Callbacks == callback)
+    {
+        interrupt1Callbacks = callback->Next; 
+    }
+    else
+    {
+        InterruptCallback* next = interrupt1Callbacks;
+        while (next)
+        {
+            if (next->Next == callback)
+            {
+                next->Next = callback->Next;
+                break;
+            }
+        }
+    }
+
+    // free(callback);
+}
+
 static void OnInterrupt1(uint gpio, uint32_t eventMask)
 {
     if (gpio != IMU_INT1_GPIO_PIN)
@@ -157,39 +170,42 @@ static void OnInterrupt1(uint gpio, uint32_t eventMask)
         return;
     }
 
-    while (interrupt1Callbacks)
+    gpio_acknowledge_irq(gpio, eventMask);
+
+    // Acknowledge interrupt and reset the status by reading.
+    uint8_t status;
+    QMI8658_read_reg(QMI8658Register_Status1, &status, 1);
+
+    InterruptCallback* next = interrupt1Callbacks;
+    while (next)
     {
-        (*interrupt1Callbacks->OnInterruptReceived)(interrupt1Callbacks, gpio, eventMask);
-        interrupt1Callbacks = interrupt1Callbacks->Next;
+        InterruptCallback* nextNext = next->Next;
+        (*next->OnInterruptReceived)(next, status);
+        next = nextNext;
+    }
+}
+
+static void OnCtrl9CommandExecuted(InterruptCallback* callback, uint8_t status)
+{
+    // if (!(status & QMI8658_STATUS1_CTRL9_CMD_DONE))
+    // {
+    //     return;
+    // }
+
+    *((bool*)callback->Payload) = false;
+    RemoveInterruptCallback(callback);
+}
+
+static void OnWomEvent(InterruptCallback* callback, uint8_t status)
+{
+    if (!(status & QMI8658_STATUS1_WAKEUP_EVENT))
+    {
+        return;
     }
 
-    // Reset the status by reading.
-    // unsigned char status = QMI8658_readStatus1();
-
-    // printf("IMU_INT1 received. Status: 0x%#02X\n", status);
-
-    // if (status & STATUS1_CTRL9_MASK)
-    // {
-    // 	// CTRL 9 function executed.
-    // }
-
-    // if (status & STATUS1_WOM_MASK)
-    // {
-    // 	// Wake on Motion event.
-    // }
-}
-
-static void OnCtrl9CommandExecuted(InterruptCallback* callback, uint gpio, uint32_t eventMask)
-{
-    *((bool*)callback->Payload) = false;
-    free(callback);
-}
-
-static void OnWomEvent(InterruptCallback* callback, uint gpio, uint32_t eventMask)
-{
     Qmi8658* module = callback->Payload;
     module->Sleeping = false;
-    free(callback);
+    RemoveInterruptCallback(callback);
 }
 
 unsigned char QMI8658_write_reg(unsigned char reg, unsigned char value)
@@ -543,8 +559,29 @@ void QMI8658_read_mag(float mag[3]){
     mag[0]=(float)mag_xyz[0];
     mag[1]=(float)mag_xyz[1];
     mag[2]=(float)mag_xyz[2];
+}
 
+static void RunCtrl9WriteCommand(enum QMI8658_Ctrl9Command command, CalibrationData* registers)
+{
+    for (unsigned int i = 0; i < registers->RegisterCount; i++)
+    {
+        CalibrationRegisterData* data = &registers->Registers[i];
+        QMI8658_write_reg(data->Register, data->Value);
+    }
 
+    bool waiting = true;
+    AddInterrupt1Callback(CreateInterruptCallback(OnCtrl9CommandExecuted, &waiting));
+
+    QMI8658_write_reg(QMI8658Register_Ctrl9, command);
+
+    while (waiting)
+    {
+        sleep_ms(1);
+        // tight_loop_contents(); // NO OP
+    }
+
+    uint8_t status;
+    QMI8658_read_reg(QMI8658Register_Status1, &status, 1);
 }
 
 void QMI8658_enableWakeOnMotion(Qmi8658* module)
@@ -571,10 +608,8 @@ void QMI8658_enableWakeOnMotion(Qmi8658* module)
     QMI8658_config_acc(QMI8658AccRange_2g, QMI8658AccOdr_LowPower_21Hz, QMI8658Lpf_Disable, QMI8658St_Disable);
 
     // 3. (A) Set wake on motion threshold.
-    enum QMI8658_WakeOnMotionThreshold threshold = QMI8658WomThreshold_low;
-
     // WoM Threshold: absolute value in mg (with 1mg/LSB resolution).
-    QMI8658_write_reg(QMI8658Register_Cal1_L, (unsigned char)QMI8658WomThreshold_low); 
+    // QMI8658_write_reg(QMI8658Register_Cal1_L, (unsigned char)QMI8658WomThreshold_low); 
 
     // 3. (B) Select interrupt, polarity, and blanking time.
     const unsigned char blankingTimeMask = 0b00111111;
@@ -585,62 +620,42 @@ void QMI8658_enableWakeOnMotion(Qmi8658* module)
     // ------
     // Setting interrupt select to 00 - INT1 with initial value 0.
     // Setting blanking time to 4 samples.
-    QMI8658_write_reg(
-        QMI8658Register_Cal1_H, 
-        (unsigned char)QMI8658_Int1 | (unsigned char)QMI8658State_low | (0x04 & blankingTimeMask));
+    // QMI8658_write_reg(
+    //     QMI8658Register_Cal1_H, 
+    //     (unsigned char)QMI8658_Int1 | (unsigned char)QMI8658State_low | (0x04 & blankingTimeMask));
 
     // 4. Enable WOM through the matching CTRL9 command.
-    QMI8658_write_reg(QMI8658Register_Ctrl9, QMI8658_Ctrl9_Cmd_WoM_Setting);
+    // QMI8658_write_reg(QMI8658Register_Ctrl9, QMI8658_Ctrl9_Cmd_WoM_Setting);
 
-    sleep_ms(5);
-    printf("WOM enabled\n");
+    CalibrationData cal = 
+    {
+        .Registers = 
+        {
+            // WoM Threshold: absolute value in mg (with 1mg/LSB resolution).
+            (CalibrationRegisterData) 
+            { 
+                .Register = QMI8658Register_Cal1_L,
+                .Value = (uint8_t)QMI8658WomThreshold_low
+            },
+            (CalibrationRegisterData) 
+            { 
+                .Register = QMI8658Register_Cal1_H,
+                .Value = (uint8_t)QMI8658_Int1 | (uint8_t)QMI8658State_low | (0x04 & blankingTimeMask)
+            },
+        },
+        .RegisterCount = 2
+    };
+
+    RunCtrl9WriteCommand(QMI8658_Ctrl9_Cmd_WoM_Setting, &cal);
+    // sleep_ms(5);
     QMI8658_enableSensors(QMI8658_CTRL7_ACC_ENABLE);
     sleep_ms(100);
 
     AddInterrupt1Callback(CreateInterruptCallback(OnWomEvent, module));
 
-    //uint8_t r;
-    //QMI8658_read_reg(QMI8658Register_Status1,&r,1);
-    //printf("Status1: %02x\n",r);
-
-
-    // IRQ GPIO23 / gpio_callback()
-    //while(1){
-    //	QMI8658_read_reg(QMI8658Register_Status1,&womCmd[0],1);
-    //	printf("%02x\n",womCmd[0]);
-    //	if(womCmd[0]&QMI8658_STATUS1_WAKEUP_EVENT){ break; }
-    //	sleep_ms(100);
-    //}
-    //QMI8658_disableWakeOnMotion();
-
-}
-
-static void RunCtrl9WriteCommand(enum QMI8658_Ctrl9Command command, CalibrationData* registers)
-{
-    for (unsigned int i = 0; i < registers->RegisterCount; i++)
+    while (module->Sleeping)
     {
-        CalibrationRegisterData* data = &registers->Registers[i];
-        if (data->Execute)
-        {
-            QMI8658_write_reg(data->Register, data->Value);
-        }
-    }
-
-    QMI8658_write_reg(QMI8658Register_Ctrl9, command);
-
-    bool waiting = true;
-    AddInterrupt1Callback(CreateInterruptCallback(OnCtrl9CommandExecuted, &waiting));
-
-    while (waiting)
-    {
-        sleep_ms(1);
-    }
-
-    uint8_t status;
-    QMI8658_read_reg(QMI8658Register_Status1, &status, 1);
-    if (status & QMI8658_STATUS1_CTRL9_CMD_DONE)
-    {
-        tight_loop_contents(); // NO OP
+        sleep_ms(250);
     }
 }
 
@@ -745,7 +760,7 @@ unsigned char QMI8658_init(i2c_inst_t* i2cInstance, Qmi8658* out)
 
     gpio_set_irq_enabled_with_callback(
         IMU_INT1_GPIO_PIN, 
-        GPIO_IRQ_EDGE_RISE, 
+        GPIO_IRQ_EDGE_RISE | GPIO_IRQ_EDGE_FALL, 
         true, 
         OnInterrupt1);
 
@@ -792,24 +807,24 @@ unsigned char QMI8658_init(i2c_inst_t* i2cInstance, Qmi8658* out)
         QMI8658_config.aeOdr = QMI8658AeOdr_128Hz;
 
         QMI8658_Config_apply(&QMI8658_config);
-        if (1)
-        {
-            unsigned char read_data = 0x00;
-            QMI8658_read_reg(QMI8658Register_Ctrl1, &read_data, 1);
-            // QMI8658_printf("QMI8658Register_Ctrl1=0x%x \n", read_data);
-            QMI8658_read_reg(QMI8658Register_Ctrl2, &read_data, 1);
-            // QMI8658_printf("QMI8658Register_Ctrl2=0x%x \n", read_data);
-            QMI8658_read_reg(QMI8658Register_Ctrl3, &read_data, 1);
-            // QMI8658_printf("QMI8658Register_Ctrl3=0x%x \n", read_data);
-            QMI8658_read_reg(QMI8658Register_Ctrl4, &read_data, 1);
-            // QMI8658_printf("QMI8658Register_Ctrl4=0x%x \n", read_data);
-            QMI8658_read_reg(QMI8658Register_Ctrl5, &read_data, 1);
-            // QMI8658_printf("QMI8658Register_Ctrl5=0x%x \n", read_data);
-            QMI8658_read_reg(QMI8658Register_Ctrl6, &read_data, 1);
-            // QMI8658_printf("QMI8658Register_Ctrl6=0x%x \n", read_data);
-            QMI8658_read_reg(QMI8658Register_Ctrl7, &read_data, 1);
-            // QMI8658_printf("QMI8658Register_Ctrl7=0x%x \n", read_data);
-        }
+        // if (1)
+        // {
+        //     unsigned char read_data = 0x00;
+        //     QMI8658_read_reg(QMI8658Register_Ctrl1, &read_data, 1);
+        //     QMI8658_printf("QMI8658Register_Ctrl1=0x%x \n", read_data);
+        //     QMI8658_read_reg(QMI8658Register_Ctrl2, &read_data, 1);
+        //     QMI8658_printf("QMI8658Register_Ctrl2=0x%x \n", read_data);
+        //     QMI8658_read_reg(QMI8658Register_Ctrl3, &read_data, 1);
+        //     QMI8658_printf("QMI8658Register_Ctrl3=0x%x \n", read_data);
+        //     QMI8658_read_reg(QMI8658Register_Ctrl4, &read_data, 1);
+        //     QMI8658_printf("QMI8658Register_Ctrl4=0x%x \n", read_data);
+        //     QMI8658_read_reg(QMI8658Register_Ctrl5, &read_data, 1);
+        //     QMI8658_printf("QMI8658Register_Ctrl5=0x%x \n", read_data);
+        //     QMI8658_read_reg(QMI8658Register_Ctrl6, &read_data, 1);
+        //     QMI8658_printf("QMI8658Register_Ctrl6=0x%x \n", read_data);
+        //     QMI8658_read_reg(QMI8658Register_Ctrl7, &read_data, 1);
+        //     QMI8658_printf("QMI8658Register_Ctrl7=0x%x \n", read_data);
+        // }
         //		QMI8658_set_layout(2);
         return 1;
     }

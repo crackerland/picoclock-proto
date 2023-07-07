@@ -181,7 +181,7 @@ static void Core1Main()
     App_Init(&lcdScreen.Base, &timer.Base, &dateTimeProvider.Base, &powerManager.Base, &colorConverter, &app);
 
     uint32_t lastMovementTime = time_us_32(); 
-    bool lowPowerMode = false;
+    bool dimScreenMode = false;
     QMI8658_MotionCoordinates acc = { };
     QMI8658_MotionCoordinates gyro = { };
     unsigned int timeCounter = 0;
@@ -198,20 +198,25 @@ static void Core1Main()
         // printf("ACC (%f, %f, %f) GYR (%f, %f, %f)\n", acc.X, acc.Y, acc.Z, gyro.X, gyro.Y, gyro.Z);
 
         uint32_t currentTime = time_us_32();
+        uint32_t ellapsedTime = currentTime - lastMovementTime;
         if (acc.Y < -500) // Left wrist facing up.
         {
             lastMovementTime = currentTime; 
-            if (lowPowerMode)
+            if (dimScreenMode)
             {
                 (*lcdScreen.Base.SetBacklightPercentage)(&lcdScreen.Base, 90);
-                lowPowerMode = false;
+                dimScreenMode = false;
             }
         }
-        else if (currentTime - lastMovementTime > 5000000)
+        else if (!dimScreenMode && ellapsedTime > 5000000)
         {
             // 5 secs. ellapsed without movement.
             (*lcdScreen.Base.SetBacklightPercentage)(&lcdScreen.Base, 5);
-            lowPowerMode = true;
+            dimScreenMode = true;
+        }
+        else if (dimScreenMode && ellapsedTime > 10000000)
+        {
+            (*app.Input.Base.Sleep)(&app.Input.Base);
         }
 
         (*app.Lifecycle.Loop)(&app.Resources);
