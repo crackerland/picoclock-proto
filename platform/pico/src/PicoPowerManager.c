@@ -2,9 +2,9 @@
 #include <string.h>
 #include "QMI8658.h"
 
-static void ShutDown(PowerManager* powerManager)
-{
-}
+// static void ShutDown(PowerManager* powerManager)
+// {
+// }
 
 static void Sleep(PowerManager* powerManager)
 {
@@ -21,8 +21,6 @@ static void Sleep(PowerManager* powerManager)
     }
 
     QMI8658_disableWakeOnMotion(this->Module);
-    sleep_ms(10);
-    QMI8658_reenable();
 
     (*this->Screen->SetSleep)(this->Screen, false);
     (*this->Screen->Base.SetBacklightPercentage)(&this->Screen->Base, backlight);
@@ -48,7 +46,7 @@ void PicoPowerManager_Init(LcdScreen* screen, Qmi8658* module, PicoPowerManager*
             .Sleep = Sleep,
             .WakeUp = WakeUp,
             .GetBattery = GetBattery, 
-            .ShutDown = ShutDown
+            // .ShutDown = ShutDown
         },
         .Screen = screen,
         .Module = module

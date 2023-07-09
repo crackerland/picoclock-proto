@@ -63,12 +63,6 @@
 #define QMI8658_CONFIG_ACCGYRMAG_ENABLE (QMI8658_CONFIG_ACC_ENABLE | QMI8658_CONFIG_GYR_ENABLE | QMI8658_CONFIG_MAG_ENABLE)
 #define QMI8658_CONFIG_AEMAG_ENABLE (QMI8658_CONFIG_AE_ENABLE | QMI8658_CONFIG_MAG_ENABLE)
 
-// CTRL9 command completed.
-#define QMI8658_STATUS1_CTRL9_CMD_DONE (0b1)
-
-// WOM wake up.
-#define QMI8658_STATUS1_WAKEUP_EVENT (0b100)
-
 enum QMI8658Register
 {
     /*! \brief FIS device identifier register. */
@@ -529,13 +523,24 @@ extern unsigned char QMI8658_write_reg(unsigned char reg, unsigned char value);
 extern unsigned char QMI8658_read_reg(unsigned char reg, unsigned char *buf, unsigned short len);
 extern unsigned char QMI8658_init(i2c_inst_t* i2cInstance, Qmi8658* out);
 extern unsigned char QMI8658_reset(void);
-extern void QMI8658_reenable();
+
+// All QMI8658C functional blocks are switched off to
+// minimize power consumption. Digital interfaces remain on
+// allowing communication with the device. All configuration
+// register values are preserved, and output data register
+// values are maintained. The current in this mode is typically
+// 20 µA. The host must initiate this mode by setting
+// sensorDisable=1.
+extern void QMI8658_powerDown(void);
+
+extern void QMI8658_setUpSensors();
 extern void QMI8658_Config_apply(struct QMI8658Config const *config);
 extern void QMI8658_enableSensors(unsigned char enableFlags);
+extern unsigned int QMI8658_read_timestamp();
 extern void QMI8658_read_acc_xyz(float acc_xyz[3]);
 extern void QMI8658_read_gyro_xyz(float gyro_xyz[3]);
-extern void QMI8658_read_xyz(QMI8658_MotionCoordinates* acc, QMI8658_MotionCoordinates* gyro, unsigned int *tim_count);
-extern void QMI8658_read_xyz_raw(short raw_acc_xyz[3], short raw_gyro_xyz[3], unsigned int *tim_count);
+extern void QMI8658_read_xyz(QMI8658_MotionCoordinates* acc, QMI8658_MotionCoordinates* gyro);
+extern void QMI8658_read_xyz_raw(short raw_acc_xyz[3], short raw_gyro_xyz[3]);
 extern void QMI8658_read_ae(float quat[4], float velocity[3]);
 extern void QMI8658_read_mag(float mag[3]);
 extern unsigned char QMI8658_readStatus0(void);
