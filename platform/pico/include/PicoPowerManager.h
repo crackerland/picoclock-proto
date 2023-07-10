@@ -12,6 +12,12 @@ typedef struct PicoPowerManager
     PicoBattery Battery;
     LcdScreen* Screen;
     Qmi8658* Module;
+    void (*UpdateState)(struct PicoPowerManager*);
+    uint32_t LastMovementTime;
+    QMI8658_MotionCoordinates Acc;
+    QMI8658_MotionCoordinates Gyro;
+    void (*OnMotion)(struct PicoPowerManager*);
+    void (*Update)(struct PicoPowerManager*);
 }
 PicoPowerManager;
 

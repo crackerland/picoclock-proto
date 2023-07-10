@@ -152,11 +152,6 @@ static inline void HandleMessage(CommandState* commandState, UserInput* input)
     commandState->PendingCommand = CMD_NONE;
 }
 
-static bool FacingUp(QMI8658_MotionCoordinates* motion)
-{
-
-}
-
 static void Core1Main()
 {
     multicore_fifo_push_blocking(CORE_READY_FLAG);
@@ -185,10 +180,7 @@ static void Core1Main()
     App app;
     App_Init(&lcdScreen.Base, &timer.Base, &dateTimeProvider.Base, &powerManager.Base, &colorConverter, &app);
 
-    uint32_t lastMovementTime = time_us_32(); 
     bool dimScreenMode = false;
-    QMI8658_MotionCoordinates acc = { };
-    QMI8658_MotionCoordinates gyro = { };
     CommandState commandState = { .PendingCommand = CMD_NONE };
     while(1)
     {
@@ -197,40 +189,7 @@ static void Core1Main()
             HandleMessage(&commandState, &app.Input.Base);
         }
 
-        QMI8658_read_xyz(&acc, &gyro);
-
-        printf("ACC (%f, %f, %f) GYR (%f, %f, %f)\n", acc.X, acc.Y, acc.Z, gyro.X, gyro.Y, gyro.Z);
-
-        uint32_t currentTime = time_us_32();
-        uint32_t ellapsedTime = currentTime - lastMovementTime;
-
-#define GYRMAX 300.0f
-#define ACCMAX 500.0f
-
-        if ((acc.X > -GYRMAX && acc.X < GYRMAX) && (acc.Y > -GYRMAX && acc.Y < GYRMAX))
-        {
-            // no_moveshake = true;
-        }
-
-        if (acc.Y < ACCMAX && acc.Y > -ACCMAX) // Left wrist facing up.
-        {
-            lastMovementTime = currentTime; 
-            if (dimScreenMode)
-            {
-                (*lcdScreen.Base.SetBacklightPercentage)(&lcdScreen.Base, 90);
-                dimScreenMode = false;
-            }
-        }
-        else if (!dimScreenMode && ellapsedTime > 5000000)
-        {
-            // 5 secs. ellapsed without movement.
-            (*lcdScreen.Base.SetBacklightPercentage)(&lcdScreen.Base, 5);
-            dimScreenMode = true;
-        }
-        else if (dimScreenMode && ellapsedTime > 10000000)
-        {
-            (*app.Input.Base.Sleep)(&app.Input.Base);
-        }
+        (*powerManager.Update)(&powerManager);
 
         (*app.Lifecycle.Loop)(&app.Resources);
         sleep_ms(100);
