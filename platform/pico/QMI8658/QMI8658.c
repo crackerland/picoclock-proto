@@ -48,6 +48,14 @@
 // Default: 0
 #define CTRL1_SENSOR_DISABLE_MASK 0b00000001
 
+typedef struct 
+{
+    Qmi8658* Module;
+    void (*Callback)(void* payload);
+    void* CallbackPayload;
+}
+WomEventPayload;
+
 enum
 {
     AXIS_X = 0,
@@ -194,8 +202,6 @@ static void RemoveInterruptCallback(InterruptCallback* callback)
             }
         }
     }
-
-    // free(callback);
 }
 
 static void OnInterrupt1(uint gpio, uint32_t eventMask)
@@ -239,9 +245,15 @@ static void OnWomEvent(InterruptCallback* callback, uint8_t status)
         return;
     }
 
-    Qmi8658* module = callback->Payload;
-    module->Sleeping = false;
+    WomEventPayload* payload = (WomEventPayload*)callback->Payload;
+    payload->Module->Sleeping = false;
+    if (payload->Callback)
+    {
+        (*payload->Callback)(payload->CallbackPayload);
+    }
+    
     RemoveInterruptCallback(callback);
+    free(payload);
 }
 
 unsigned char QMI8658_write_reg(unsigned char reg, unsigned char value)
@@ -434,40 +446,6 @@ float QMI8658_readTemp(void)
     return temp_f;
 }
 
-void QMI8658_read_acc_xyz(float acc_xyz[3])
-{
-    unsigned char buf_reg[6];
-    short raw_acc_xyz[3];
-
-    QMI8658_read_reg(QMI8658Register_Ax_L, buf_reg, 6); // 0x19, 25
-    raw_acc_xyz[0] = (short)((unsigned short)(buf_reg[1] << 8) | (buf_reg[0]));
-    raw_acc_xyz[1] = (short)((unsigned short)(buf_reg[3] << 8) | (buf_reg[2]));
-    raw_acc_xyz[2] = (short)((unsigned short)(buf_reg[5] << 8) | (buf_reg[4]));
-
-    acc_xyz[0] = (raw_acc_xyz[0] * ONE_G) / acc_lsb_div;
-    acc_xyz[1] = (raw_acc_xyz[1] * ONE_G) / acc_lsb_div;
-    acc_xyz[2] = (raw_acc_xyz[2] * ONE_G) / acc_lsb_div;
-
-    // QMI8658_printf("fis210x acc:	%f	%f	%f\n", acc_xyz[0], acc_xyz[1], acc_xyz[2]);
-}
-
-void QMI8658_read_gyro_xyz(float gyro_xyz[3])
-{
-    unsigned char buf_reg[6];
-    short raw_gyro_xyz[3];
-
-    QMI8658_read_reg(QMI8658Register_Gx_L, buf_reg, 6); // 0x1f, 31
-    raw_gyro_xyz[0] = (short)((unsigned short)(buf_reg[1] << 8) | (buf_reg[0]));
-    raw_gyro_xyz[1] = (short)((unsigned short)(buf_reg[3] << 8) | (buf_reg[2]));
-    raw_gyro_xyz[2] = (short)((unsigned short)(buf_reg[5] << 8) | (buf_reg[4]));
-
-    gyro_xyz[0] = (raw_gyro_xyz[0] * 1.0f) / gyro_lsb_div;
-    gyro_xyz[1] = (raw_gyro_xyz[1] * 1.0f) / gyro_lsb_div;
-    gyro_xyz[2] = (raw_gyro_xyz[2] * 1.0f) / gyro_lsb_div;
-
-    // QMI8658_printf("fis210x gyro:	%f	%f	%f\n", gyro_xyz[0], gyro_xyz[1], gyro_xyz[2]);
-}
-
 unsigned int QMI8658_read_timestamp()
 {
     unsigned char buf[3];
@@ -495,6 +473,24 @@ static inline float ReadGyroAxis(short lo, short hi)
     return (float)(((short)((unsigned short)(hi << 8) | lo)) * 1.0f) / gyro_lsb_div;
 }
 
+void QMI8658_read_acc_xyz(QMI8658_MotionCoordinates* acc)
+{
+    unsigned char registersBuffer[6];
+    QMI8658_read_reg(QMI8658Register_Ax_L, registersBuffer, 6); // 0x19, 25
+    acc->X = ReadAccAxis(registersBuffer[0], registersBuffer[1]);
+    acc->Y = ReadAccAxis(registersBuffer[2], registersBuffer[3]);
+    acc->Z = ReadAccAxis(registersBuffer[4], registersBuffer[5]);
+}
+
+void QMI8658_read_gyro_xyz(QMI8658_MotionCoordinates* gyro)
+{
+    unsigned char registersBuffer[6];
+    QMI8658_read_reg(QMI8658Register_Gx_L, registersBuffer, 6); // 0x1f, 31
+    gyro->X = ReadGyroAxis(registersBuffer[0], registersBuffer[1]);
+    gyro->Y = ReadGyroAxis(registersBuffer[2], registersBuffer[3]);
+    gyro->Z = ReadGyroAxis(registersBuffer[4], registersBuffer[5]);
+}
+
 void QMI8658_read_xyz(QMI8658_MotionCoordinates* acc, QMI8658_MotionCoordinates* gyro)
 {
     // ACC: Registers 53-58 (0x35 – 0x3A)
@@ -508,28 +504,6 @@ void QMI8658_read_xyz(QMI8658_MotionCoordinates* acc, QMI8658_MotionCoordinates*
     gyro->X = ReadGyroAxis(buf_reg[6], buf_reg[7]);
     gyro->Y = ReadGyroAxis(buf_reg[8], buf_reg[9]);
     gyro->Z = ReadGyroAxis(buf_reg[10], buf_reg[11]);
-    
-    // short raw_acc_xyz[3] = 
-    // {
-    //     (short)((unsigned short)(buf_reg[1] << 8) | (buf_reg[0])),
-    //     (short)((unsigned short)(buf_reg[3] << 8) | (buf_reg[2])),
-    //     (short)((unsigned short)(buf_reg[5] << 8) | (buf_reg[4]))
-    // };
-
-    // acc->X = (float)(raw_acc_xyz[AXIS_X] * 1000.0f) / acc_lsb_div;
-    // acc->Y = (float)(raw_acc_xyz[AXIS_Y] * 1000.0f) / acc_lsb_div;
-    // acc->Z = (float)(raw_acc_xyz[AXIS_Z] * 1000.0f) / acc_lsb_div;
-
-    // short raw_gyro_xyz[3] =
-    // {
-    //     (short)((unsigned short)(buf_reg[7] << 8) | (buf_reg[6])),
-    //     (short)((unsigned short)(buf_reg[9] << 8) | (buf_reg[8])),
-    //     (short)((unsigned short)(buf_reg[11] << 8) | (buf_reg[10]))
-    // };
-
-    // gyro->X = (float)(raw_gyro_xyz[0] * 1.0f) / gyro_lsb_div;
-    // gyro->Y = (float)(raw_gyro_xyz[1] * 1.0f) / gyro_lsb_div;
-    // gyro->Z = (float)(raw_gyro_xyz[2] * 1.0f) / gyro_lsb_div;
 }
 
 void QMI8658_read_xyz_raw(short raw_acc_xyz[3], short raw_gyro_xyz[3])
@@ -609,7 +583,7 @@ static void RunCtrl9WriteCommand(enum QMI8658_Ctrl9Command command, CalibrationD
     QMI8658_read_reg(QMI8658Register_Status1, &status, 1);
 }
 
-void QMI8658_enableWakeOnMotion(Qmi8658* module)
+void QMI8658_enableWakeOnMotion(Qmi8658* module, void (*onWake)(void* payload), void* callbackPayload)
 {
     module->WakeOnMotionEnabled = true;
     module->Sleeping = true;
@@ -632,26 +606,13 @@ void QMI8658_enableWakeOnMotion(Qmi8658* module)
     // 2. Set accelerometer sample rate and scale.
     QMI8658_config_acc(QMI8658AccRange_2g, QMI8658AccOdr_LowPower_21Hz, QMI8658Lpf_Disable, QMI8658St_Disable);
 
-    // 3. (A) Set wake on motion threshold.
-    // WoM Threshold: absolute value in mg (with 1mg/LSB resolution).
-    // QMI8658_write_reg(QMI8658Register_Cal1_L, (unsigned char)QMI8658WomThreshold_low); 
-
-    // 3. (B) Select interrupt, polarity, and blanking time.
-    const unsigned char blankingTimeMask = 0b00111111;
-
+    // 3. Set wake on motion threshold (WoM Threshold: absolute value in mg (with 1mg/LSB resolution)).
+    // Select interrupt, polarity, and blanking time.
+    // 4. Enable WOM through the matching CTRL9 command.
     // CAL1_H register:
     // 7:6 Interrupt select
     // 0:5 Interrupt blanking time (in number of accelerometer samples)
-    // ------
-    // Setting interrupt select to 00 - INT1 with initial value 0.
-    // Setting blanking time to 4 samples.
-    // QMI8658_write_reg(
-    //     QMI8658Register_Cal1_H, 
-    //     (unsigned char)QMI8658_Int1 | (unsigned char)QMI8658State_low | (0x04 & blankingTimeMask));
-
-    // 4. Enable WOM through the matching CTRL9 command.
-    // QMI8658_write_reg(QMI8658Register_Ctrl9, QMI8658_Ctrl9_Cmd_WoM_Setting);
-
+    const unsigned char blankingTimeMask = 0b00111111;
     CalibrationData cal = 
     {
         .Registers = 
@@ -665,6 +626,9 @@ void QMI8658_enableWakeOnMotion(Qmi8658* module)
             (CalibrationRegisterData) 
             { 
                 .Register = QMI8658Register_Cal1_H,
+
+                // Setting interrupt select to 00 - INT1 with initial value 0.
+                // Setting blanking time to 4 samples.
                 .Value = (uint8_t)QMI8658_Int1 | (uint8_t)QMI8658State_low | (0x04 & blankingTimeMask)
             },
         },
@@ -676,12 +640,11 @@ void QMI8658_enableWakeOnMotion(Qmi8658* module)
     QMI8658_enableSensors(QMI8658_CTRL7_ACC_ENABLE);
     sleep_ms(100);
 
-    AddInterrupt1Callback(CreateInterruptCallback(OnWomEvent, module));
-
-    while (module->Sleeping)
-    {
-        sleep_ms(250);
-    }
+    WomEventPayload* payload = (WomEventPayload*)malloc(sizeof(WomEventPayload));
+    payload->Module = module;
+    payload->Callback = onWake;
+    payload->CallbackPayload = callbackPayload;
+    AddInterrupt1Callback(CreateInterruptCallback(OnWomEvent, payload));
 }
 
 void QMI8658_disableWakeOnMotion(Qmi8658* module)
@@ -717,6 +680,7 @@ void QMI8658_disableWakeOnMotion(Qmi8658* module)
 void QMI8658_setUpSensors()
 {
     QMI8658_write_reg(QMI8658Register_Ctrl1, CTRL1_SPI_AI_MASK | CTRL1_SPI_BE_MASK);
+    // QMI8658_config.inputSelection = QMI8658_CONFIG_GYR_ENABLE | QMI8658_CONFIG_ACC_ENABLE;
     QMI8658_config.inputSelection = QMI8658_CONFIG_ACCGYR_ENABLE;
     QMI8658_config.accRange = QMI8658AccRange_8g;
     QMI8658_config.accOdr = QMI8658AccOdr_1000Hz;

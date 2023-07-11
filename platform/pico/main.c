@@ -25,6 +25,9 @@
 #include "hardware/i2c.h"
 #include "hardware/pwm.h"
 #include "hardware/flash.h"
+#include "hardware/watchdog.h"
+
+#define MULTICORE 
 
 extern _Colors Colors;
 
@@ -152,14 +155,98 @@ static inline void HandleMessage(CommandState* commandState, UserInput* input)
     commandState->PendingCommand = CMD_NONE;
 }
 
-static void Core1Main()
+static void ReadBuffer(char* buffer, size_t length, bool* cancel)
 {
-    multicore_fifo_push_blocking(CORE_READY_FLAG);
-    if (multicore_fifo_pop_blocking() != CORE_READY_FLAG)
+    unsigned int next = 0;
+    while (next < length)
     {
-        return;
-    }
+        if (*cancel)
+        {
+            return;
+        }
 
+        int c = PICO_ERROR_TIMEOUT;
+        if ((c = getchar_timeout_us(0)) != PICO_ERROR_TIMEOUT)
+        {
+            buffer[next++] = (char)c;
+        }
+    }
+}
+
+#ifndef MULTICORE
+static uint32_t pendingMessage = 0;
+static bool messagePending = false;
+#endif
+
+static inline void PushMessage(uint32_t message)
+{
+#ifdef MULTICORE
+    multicore_fifo_push_blocking(message);
+#else
+    pendingMessage = message; 
+    messagePending = true;
+#endif
+}
+
+static inline bool MessagePending()
+{
+#ifdef MULTICORE
+    return multicore_fifo_rvalid();
+#else
+    return messagePending;
+#endif
+}
+
+static void HandleCommand(char command[4], bool* cancel)
+{
+    if (!strcmp(CMD_TEXT_SET_TIME, command))
+    {
+        printf("Set time\n");
+        PushMessage(CMD_SET_TIME);
+
+        char unixTimeBuffer[11] = { };
+        ReadBuffer(unixTimeBuffer, 10, cancel);
+        PushMessage((int)atoi(unixTimeBuffer));
+    }
+    else if (!strcmp(CMD_TEXT_PLUS, command))
+    {
+        printf("Plus\n");
+        PushMessage(CMD_PLUS);
+    }
+    else if (!strcmp(CMD_TEXT_MINUS, command))
+    {
+        printf("Minus\n");
+        PushMessage(CMD_MINUS);
+    }
+    else if (!strcmp(CMD_TEXT_SELECT, command))
+    {
+        printf("Select\n");
+        PushMessage(CMD_SELECT);
+    }
+    else if (!strcmp(CMD_TEXT_SLEEP, command))
+    {
+        printf("Sleep\n");
+        PushMessage(CMD_SLEEP);
+    }
+}
+
+static void PollMessage(CommandState* commandState, UserInput* input)
+{
+#ifndef MULTICORE
+    bool cancel = false;
+    char command[4] = { };
+    ReadBuffer(command, 3, &cancel);
+    HandleCommand(command, &cancel);
+#endif
+
+    if (MessagePending())
+    {
+        HandleMessage(commandState, input);
+    }
+}
+
+static inline void AppMain()
+{
     PicoDateTimeProvider_Init(&dateTimeProvider);
 
     PicoTimer timer;
@@ -184,72 +271,37 @@ static void Core1Main()
     CommandState commandState = { .PendingCommand = CMD_NONE };
     while(1)
     {
-        if (multicore_fifo_rvalid())
-        {
-            HandleMessage(&commandState, &app.Input.Base);
-        }
-
+        PollMessage(&commandState, &app.Input.Base);
         (*powerManager.Update)(&powerManager);
-
         (*app.Lifecycle.Loop)(&app.Resources);
         sleep_ms(100);
     }
 }
 
-static void ReadBuffer(char* buffer, size_t length, bool* cancel)
+static void Core1Main()
 {
-    unsigned int next = 0;
-    while (next < length)
+    multicore_fifo_push_blocking(CORE_READY_FLAG);
+    if (multicore_fifo_pop_blocking() != CORE_READY_FLAG)
     {
-        if (*cancel)
-        {
-            return;
-        }
+        return;
+    }
 
-        int c = PICO_ERROR_TIMEOUT;
-        if ((c = getchar_timeout_us(0)) != PICO_ERROR_TIMEOUT)
-        {
-            buffer[next++] = (char)c;
-        }
-    }
-}
-
-static void HandleCommand(char command[4], bool* cancel)
-{
-    if (!strcmp(CMD_TEXT_SET_TIME, command))
-    {
-        printf("Set time\n");
-        multicore_fifo_push_blocking(CMD_SET_TIME);
-
-        char unixTimeBuffer[11] = { };
-        ReadBuffer(unixTimeBuffer, 10, cancel);
-        multicore_fifo_push_blocking((int)atoi(unixTimeBuffer));
-    }
-    else if (!strcmp(CMD_TEXT_PLUS, command))
-    {
-        printf("Plus\n");
-        multicore_fifo_push_blocking(CMD_PLUS);
-    }
-    else if (!strcmp(CMD_TEXT_MINUS, command))
-    {
-        printf("Minus\n");
-        multicore_fifo_push_blocking(CMD_MINUS);
-    }
-    else if (!strcmp(CMD_TEXT_SELECT, command))
-    {
-        printf("Select\n");
-        multicore_fifo_push_blocking(CMD_SELECT);
-    }
-    else if (!strcmp(CMD_TEXT_SLEEP, command))
-    {
-        printf("Sleep\n");
-        multicore_fifo_push_blocking(CMD_SLEEP);
-    }
+    AppMain();
 }
 
 int main(void)
 {
     stdio_init_all();
+
+    // if (watchdog_caused_reboot()) 
+    // {
+    //     // Something stalled and caused a reboot.
+    //     printf("Rebooted by watchdog.\n");
+    // }
+
+    // watchdog_enable(1000, true);
+
+#ifdef MULTICORE
     multicore_launch_core1(Core1Main);
 
     // Wait for the second core to finish startup.
@@ -262,10 +314,15 @@ int main(void)
 
     while(1)
     {
+        // watchdog_update();
+
         bool cancel = false;
         char command[4] = { };
         ReadBuffer(command, 3, &cancel);
-
         HandleCommand(command, &cancel);
+        sleep_ms(250);
     }
+#else
+    AppMain();
+#endif
 }
