@@ -680,8 +680,8 @@ void QMI8658_disableWakeOnMotion(Qmi8658* module)
 void QMI8658_setUpSensors()
 {
     QMI8658_write_reg(QMI8658Register_Ctrl1, CTRL1_SPI_AI_MASK | CTRL1_SPI_BE_MASK);
-    // QMI8658_config.inputSelection = QMI8658_CONFIG_GYR_ENABLE | QMI8658_CONFIG_ACC_ENABLE;
-    QMI8658_config.inputSelection = QMI8658_CONFIG_ACCGYR_ENABLE;
+    QMI8658_config.inputSelection = QMI8658_CONFIG_GYR_ENABLE;
+    // QMI8658_config.inputSelection = QMI8658_CONFIG_ACCGYR_ENABLE;
     QMI8658_config.accRange = QMI8658AccRange_8g;
     QMI8658_config.accOdr = QMI8658AccOdr_1000Hz;
     QMI8658_config.gyrRange = QMI8658GyrRange_512dps; 

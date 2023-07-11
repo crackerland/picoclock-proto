@@ -3,9 +3,6 @@
 #include "QMI8658.h"
 #include "hardware/vreg.h"
 
-#define GYRMAX 300.0f
-#define ACCMAX 500.0f
-
 static void UpdateStateNormal(PicoPowerManager*);
 
 static void OnWomWakeEvent(void* payload)
@@ -86,13 +83,17 @@ static void UpdateStateNormal(PicoPowerManager* state)
 
 static void Update(PicoPowerManager* powerManager)
 {
-    QMI8658_read_xyz(&powerManager->Acc, &powerManager->Gyro);
-    printf("ACC (%f, %f, %f) GYR (%f, %f, %f)\n", powerManager->Acc.X, powerManager->Acc.Y, powerManager->Acc.Z, powerManager->Gyro.X, powerManager->Gyro.Y, powerManager->Gyro.Z);
+    // QMI8658_read_xyz(&powerManager->Acc, &powerManager->Gyro);
+    QMI8658_read_gyro_xyz(&powerManager->Gyro);
     // QMI8658_read_acc_xyz(&powerManager->Acc);
     // printf("ACC (%f, %f, %f)\n", powerManager->Acc.X, powerManager->Acc.Y, powerManager->Acc.Z);
-    // printf("ACC (%f, %f, %f) GYR (%f, %f, %f)\n", powerManager->Acc.X, powerManager->Acc.Y, powerManager->Acc.Z, powerManager->Gyro.X, powerManager->Gyro.Y, powerManager->Gyro.Z);
+    printf("ACC (%f, %f, %f) GYR (%f, %f, %f)\n", powerManager->Acc.X, powerManager->Acc.Y, powerManager->Acc.Z, powerManager->Gyro.X, powerManager->Gyro.Y, powerManager->Gyro.Z);
 
-    if (powerManager->Acc.Y < ACCMAX && powerManager->Acc.Y > -ACCMAX) // Left wrist facing up.
+    // if (powerManager->Acc.Y < ACCMAX && powerManager->Acc.Y > -ACCMAX) 
+#define GYRMAX 300.0f
+#define ACCMAX 500.0f
+
+    if (powerManager->Gyro.X > GYRMAX || powerManager->Gyro.X < -GYRMAX) 
     {
         (*powerManager->OnMotion)(powerManager);
     }
