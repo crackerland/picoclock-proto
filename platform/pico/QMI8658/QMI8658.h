@@ -514,6 +514,8 @@ typedef struct Qmi8658
 {
     bool Sleeping;
     bool WakeOnMotionEnabled;
+    i2c_inst_t* I2cInstance;
+    uint8_t ModuleSlaveAddress;
 }
 Qmi8658;
 

@@ -135,6 +135,15 @@ void DEV_I2C_Read_nByte(uint8_t addr, uint8_t reg, uint8_t *pData, uint32_t Len)
     i2c_read_blocking(I2C_PORT, addr, pData, Len, false);
 }
 
+static void ReadBytes(Qmi8658* module, uint8_t registerAddress, uint8_t *buffer, size_t readCount)
+{
+    // First tell the module which register to read.
+    i2c_write_blocking(module->I2cInstance, module->ModuleSlaveAddress, &registerAddress, 1, true);
+
+    // Then read the register contents.
+    i2c_read_blocking(module->I2cInstance, module->ModuleSlaveAddress, buffer, readCount, false);
+}
+
 uint16_t DEC_ADC_Read(void)
 {
     return adc_read();
@@ -754,10 +763,9 @@ unsigned char QMI8658_init(i2c_inst_t* i2cInstance, Qmi8658* out)
     Qmi8658 module = 
     {
         .Sleeping = false,
-        .WakeOnMotionEnabled = false
+        .WakeOnMotionEnabled = false,
+        .I2cInstance = i2cInstance
     };
-
-    memcpy(out, &module, sizeof(Qmi8658));
 
     // I2C Config
     i2c_init(i2cInstance, 400 * 1000);
@@ -785,7 +793,7 @@ unsigned char QMI8658_init(i2c_inst_t* i2cInstance, Qmi8658* out)
 
     while (iCount < 2)
     {
-        QMI8658_slave_addr = QMI8658_slave[iCount];
+        module.ModuleSlaveAddress = QMI8658_slave_addr = QMI8658_slave[iCount];
         retry = 0;
 
         while ((QMI8658_chip_id != 0x05) && (retry++ < 5))
@@ -810,5 +818,8 @@ unsigned char QMI8658_init(i2c_inst_t* i2cInstance, Qmi8658* out)
     }
 
     QMI8658_setUpSensors();
+
+    memcpy(out, &module, sizeof(Qmi8658));
+
     return 1;
 }
