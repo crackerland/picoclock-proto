@@ -84,10 +84,19 @@ static void UpdateStateNormal(PicoPowerManager* state)
 static void Update(PicoPowerManager* powerManager)
 {
     // QMI8658_read_xyz(&powerManager->Acc, &powerManager->Gyro);
-    QMI8658_read_gyro_xyz(&powerManager->Gyro);
+    // QMI8658_read_gyro_xyz(&powerManager->Gyro);
     // QMI8658_read_acc_xyz(&powerManager->Acc);
     // printf("ACC (%f, %f, %f)\n", powerManager->Acc.X, powerManager->Acc.Y, powerManager->Acc.Z);
-    printf("ACC (%f, %f, %f) GYR (%f, %f, %f)\n", powerManager->Acc.X, powerManager->Acc.Y, powerManager->Acc.Z, powerManager->Gyro.X, powerManager->Gyro.Y, powerManager->Gyro.Z);
+    (*powerManager->Module->Gyroscope.Read)(&powerManager->Module->Gyroscope, &powerManager->Gyro);
+    (*powerManager->Module->Accelerometer.Read)(&powerManager->Module->Accelerometer, &powerManager->Acc);
+    printf(
+        "ACC (%f, %f, %f) GYR (%f, %f, %f)\n", 
+        powerManager->Acc.X, 
+        powerManager->Acc.Y, 
+        powerManager->Acc.Z, 
+        powerManager->Gyro.X, 
+        powerManager->Gyro.Y, 
+        powerManager->Gyro.Z);
 
     // if (powerManager->Acc.Y < ACCMAX && powerManager->Acc.Y > -ACCMAX) 
 #define GYRMAX 300.0f

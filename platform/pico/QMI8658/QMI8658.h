@@ -281,14 +281,28 @@ enum QMI8658_StConfig
 
 enum QMI8658_LpfMode
 {
+    // Accelerometer low pass filter 2.62% of ODR.
     A_LSP_MODE_0 = 0x00 << 1,
+
+    // Accelerometer low pass filter 3.59% of ODR.
     A_LSP_MODE_1 = 0x01 << 1,
+
+    // Accelerometer low pass filter 5.32% of ODR.
     A_LSP_MODE_2 = 0x02 << 1,
+
+    // Accelerometer low pass filter 14.0% of ODR.
     A_LSP_MODE_3 = 0x03 << 1,
 
+    // Gyro low pass filter 2.62% of ODR.
     G_LSP_MODE_0 = 0x00 << 5,
+
+    // Gyro low pass filter 3.59% of ODR.
     G_LSP_MODE_1 = 0x01 << 5,
+
+    // Gyro low pass filter 5.32% of ODR.
     G_LSP_MODE_2 = 0x02 << 5,
+
+    // Gyro low pass filter 14.0% of ODR.
     G_LSP_MODE_3 = 0x03 << 5
 };
 
@@ -319,14 +333,17 @@ enum QMI8658_AccOdr
 
 enum QMI8658_GyrRange
 {
-    QMI8658GyrRange_32dps = 0 << 4,   /*!< \brief +-32 degrees per second. */
-    QMI8658GyrRange_64dps = 1 << 4,   /*!< \brief +-64 degrees per second. */
-    QMI8658GyrRange_128dps = 2 << 4,  /*!< \brief +-128 degrees per second. */
-    QMI8658GyrRange_256dps = 3 << 4,  /*!< \brief +-256 degrees per second. */
-    QMI8658GyrRange_512dps = 4 << 4,  /*!< \brief +-512 degrees per second. */
-    QMI8658GyrRange_1024dps = 5 << 4, /*!< \brief +-1024 degrees per second. */
-    QMI8658GyrRange_2048dps = 6 << 4, /*!< \brief +-2048 degrees per second. */
-    QMI8658GyrRange_4096dps = 7 << 4  /*!< \brief +-2560 degrees per second. */
+    QMI8658GyrRange_16dps = 0b000 << 4,   /*!< \brief +-32 degrees per second. */
+    QMI8658GyrRange_32dps = 0b001 << 4,   /*!< \brief +-32 degrees per second. */
+    QMI8658GyrRange_64dps = 0b010 << 4,   /*!< \brief +-64 degrees per second. */
+    QMI8658GyrRange_128dps = 0b011 << 4,  /*!< \brief +-128 degrees per second. */
+    QMI8658GyrRange_256dps = 0b100 << 4,  /*!< \brief +-256 degrees per second. */
+    QMI8658GyrRange_512dps = 0b101 << 4,  /*!< \brief +-512 degrees per second. */
+    QMI8658GyrRange_1024dps = 0b110 << 4, /*!< \brief +-1024 degrees per second. */
+    QMI8658GyrRange_2048dps = 0b111 << 4, /*!< \brief +-2048 degrees per second. */
+
+    // This is not shown in the datasheet. Why is it here?
+    // QMI8658GyrRange_4096dps = 8 << 4  /*!< \brief +-2560 degrees per second. */
 };
 
 /*!
@@ -334,15 +351,15 @@ enum QMI8658_GyrRange
  */
 enum QMI8658_GyrOdr
 {
-    QMI8658GyrOdr_8000Hz = 0x00, /*!< \brief High resolution 8000Hz output rate. */
-    QMI8658GyrOdr_4000Hz = 0x01, /*!< \brief High resolution 4000Hz output rate. */
-    QMI8658GyrOdr_2000Hz = 0x02, /*!< \brief High resolution 2000Hz output rate. */
-    QMI8658GyrOdr_1000Hz = 0x03, /*!< \brief High resolution 1000Hz output rate. */
-    QMI8658GyrOdr_500Hz = 0x04,  /*!< \brief High resolution 500Hz output rate. */
-    QMI8658GyrOdr_250Hz = 0x05,  /*!< \brief High resolution 250Hz output rate. */
-    QMI8658GyrOdr_125Hz = 0x06,  /*!< \brief High resolution 125Hz output rate. */
-    QMI8658GyrOdr_62_5Hz = 0x07, /*!< \brief High resolution 62.5Hz output rate. */
-    QMI8658GyrOdr_31_25Hz = 0x08 /*!< \brief High resolution 31.25Hz output rate. */
+    QMI8658GyrOdr_8000Hz = 0x00, /*\brief High resolution 8000Hz output rate. */
+    QMI8658GyrOdr_4000Hz = 0x01, /*\brief High resolution 4000Hz output rate. */
+    QMI8658GyrOdr_2000Hz = 0x02, /*\brief High resolution 2000Hz output rate. */
+    QMI8658GyrOdr_1000Hz = 0x03, /*\brief High resolution 1000Hz output rate. */
+    QMI8658GyrOdr_500Hz = 0x04,  /*\brief High resolution 500Hz output rate. */
+    QMI8658GyrOdr_250Hz = 0x05,  /*\brief High resolution 250Hz output rate. */
+    QMI8658GyrOdr_125Hz = 0x06,  /*\brief High resolution 125Hz output rate. */
+    QMI8658GyrOdr_62_5Hz = 0x07, /*\brief High resolution 62.5Hz output rate. */
+    QMI8658GyrOdr_31_25Hz = 0x08 /*\brief High resolution 31.25Hz output rate. */
 };
 
 enum QMI8658_AeOdr
@@ -510,20 +527,56 @@ typedef struct QMI8658_MotionCoordinates
 }
 QMI8658_MotionCoordinates;
 
+struct Qmi8658;
+
+typedef struct MotionDevice
+{
+    void (*Read)(struct MotionDevice*, QMI8658_MotionCoordinates* out);
+    unsigned short LsbDivider;
+    struct Qmi8658* Module;
+} 
+MotionDevice;
+
+typedef struct 
+{
+    bool Enabled;
+    enum QMI8658_AccRange Range; 
+    enum QMI8658_AccOdr Odr; 
+    bool LowPassFilterEnabled; 
+    bool SelfTestEnabled;
+}
+Qmi8658AccelerometerConfig;
+
+typedef struct 
+{
+    bool Enabled;
+    enum QMI8658_GyrRange Range; 
+    enum QMI8658_GyrOdr Odr; 
+    bool LowPassFilterEnabled; 
+    bool SelfTestEnabled;
+}
+Qmi8658GyroscopeConfig;
+
 typedef struct Qmi8658
 {
+    void (*Reset)(struct Qmi8658*);
+    void (*ConfigureSensors)(struct Qmi8658*, Qmi8658AccelerometerConfig* accelConfig, Qmi8658GyroscopeConfig* gyroConfig);
+    MotionDevice Accelerometer;
+    MotionDevice Gyroscope;
     bool Sleeping;
     bool WakeOnMotionEnabled;
     i2c_inst_t* I2cInstance;
     uint8_t ModuleSlaveAddress;
+    uint8_t ChipRevisionId;
+    Qmi8658AccelerometerConfig AccelConfig;
+    Qmi8658GyroscopeConfig GyroConfig;
 }
 Qmi8658;
 
-#define QMI8658_Reset 0x60
+extern void Qmi8658_Init(i2c_inst_t* i2cInstance, Qmi8658* out);
 
 extern unsigned char QMI8658_write_reg(unsigned char reg, unsigned char value);
 extern unsigned char QMI8658_read_reg(unsigned char reg, unsigned char *buf, unsigned short len);
-extern unsigned char QMI8658_init(i2c_inst_t* i2cInstance, Qmi8658* out);
 extern unsigned char QMI8658_reset(void);
 
 // All QMI8658C functional blocks are switched off to
@@ -539,10 +592,10 @@ extern void QMI8658_setUpSensors();
 extern void QMI8658_Config_apply(struct QMI8658Config const *config);
 extern void QMI8658_enableSensors(unsigned char enableFlags);
 extern unsigned int QMI8658_read_timestamp();
-extern void QMI8658_read_acc_xyz(QMI8658_MotionCoordinates* acc);
-extern void QMI8658_read_gyro_xyz(QMI8658_MotionCoordinates* acc);
-extern void QMI8658_read_xyz(QMI8658_MotionCoordinates* acc, QMI8658_MotionCoordinates* gyro);
-extern void QMI8658_read_xyz_raw(short raw_acc_xyz[3], short raw_gyro_xyz[3]);
+// extern void QMI8658_read_acc_xyz(QMI8658_MotionCoordinates* acc);
+// extern void QMI8658_read_gyro_xyz(QMI8658_MotionCoordinates* acc);
+// extern void QMI8658_read_xyz(QMI8658_MotionCoordinates* acc, QMI8658_MotionCoordinates* gyro);
+// extern void QMI8658_read_xyz_raw(short raw_acc_xyz[3], short raw_gyro_xyz[3]);
 extern void QMI8658_read_ae(float quat[4], float velocity[3]);
 extern void QMI8658_read_mag(float mag[3]);
 extern unsigned char QMI8658_readStatus0(void);

@@ -256,7 +256,26 @@ static inline void AppMain()
     LcdScreen_Init(&timer.Base, ScanDirection_Horizontal, &lcdScreen);
 
     Qmi8658 module;
-    QMI8658_init(i2c1, &module);
+    Qmi8658_Init(i2c1, &module);
+
+    (*module.ConfigureSensors)(
+        &module, 
+        &((Qmi8658AccelerometerConfig)
+        {
+            .Enabled = true,
+            .Range = QMI8658AccRange_8g,
+            .Odr = QMI8658AccOdr_1000Hz,
+            .LowPassFilterEnabled = true,
+            .SelfTestEnabled = false
+        }),
+        &((Qmi8658GyroscopeConfig)
+        {
+            .Enabled = true,
+            .Range = QMI8658GyrRange_512dps,
+            .Odr = QMI8658GyrOdr_1000Hz,
+            .LowPassFilterEnabled = true,
+            .SelfTestEnabled = false
+        }));
 
     PicoPowerManager powerManager;
     PicoPowerManager_Init(&lcdScreen, &module, &powerManager);
