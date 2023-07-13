@@ -560,7 +560,12 @@ Qmi8658GyroscopeConfig;
 typedef struct Qmi8658
 {
     void (*Reset)(struct Qmi8658*);
-    void (*ConfigureSensors)(struct Qmi8658*, Qmi8658AccelerometerConfig* accelConfig, Qmi8658GyroscopeConfig* gyroConfig);
+    void (*ConfigureSensors)(
+        struct Qmi8658*,
+        bool enableAttitudeEngine,
+        Qmi8658AccelerometerConfig* accelConfig, 
+        Qmi8658GyroscopeConfig* gyroConfig);
+
     MotionDevice Accelerometer;
     MotionDevice Gyroscope;
     bool Sleeping;

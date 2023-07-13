@@ -26,30 +26,6 @@
 // * When a reset is issued
 #define SYSTEM_TURN_ON_TIME_MILLIS 1750
 
-// 7 SIM 
-// 0: Enables 4-wire SPI interface 
-// 1: Enables 3-wire SPI interface 
-// Default: 0
-#define CTRL1_SIM_MASK 0b10000000
-
-// 6 SPI_AI (Auto increment)
-// 0: Serial interface (SPI or I2C) address do not auto increment 
-// 1: Serial interface (SPI or I2C) address auto increment
-// Default: 0
-#define CTRL1_SPI_AI_MASK 0b01000000
-
-// 5 SPI_BE (Big endian) 
-// 0: SPI read data little endian 
-// 1: SPI read data big endian
-// Default: 1
-#define CTRL1_SPI_BE_MASK 0b00100000
-
-// 0 SensorDisable
-// 0: Enables internal 2 MHz oscillator 
-// 1: Disables internal 2 MHz oscillator
-// Default: 0
-#define CTRL1_SENSOR_DISABLE_MASK 0b00000001
-
 typedef struct 
 {
     Qmi8658* Module;
@@ -57,6 +33,154 @@ typedef struct
     void* CallbackPayload;
 }
 WomEventPayload;
+
+// Serial interface and sensor enable. Register address: 2 (0x02)
+typedef struct 
+{
+    // (SIM, Bit 7)
+    // True: 3 wire SPI mode 
+    // False: 4 wire SPI mode
+    bool Spi3WireMode;
+
+    // (SPI_AI) Bit 6
+    // Whether serial addresses are autoincremented during a read.
+    bool SerialAutoincrement;
+
+    // (SPI_BE) Bit 5
+    // Whether reads are returned as big endian.
+    bool ReadBigEndian;
+
+    // (SensorDisable) Bit 0
+    // Whether the internal 2 MHz oscillator for the sensors is disabled.
+    bool DisableSensors;
+}
+Ctrl1Values;
+
+// Accelerometer settings. Register address 3 (0x03)
+typedef struct 
+{
+    // (aST) Bit 7
+    // Whether the accelerometer self test is enabled.
+    bool SelfTest;
+
+    // (aFS) Bits 6:4
+    // The full scale value, i.e., the range.
+    enum QMI8658_AccRange FullScale;
+
+    // (aODR) Bits 3:0
+    // The accelerometer output data rate.
+    enum QMI8658_AccOdr OutputDataRate;
+}
+Ctrl2Values;
+
+// Gyroscope settings. Register address 4 (0x04)
+typedef struct 
+{
+    // (gST) Bit 7
+    // Whether the gyroscope self test is enabled.
+    bool SelfTest;
+
+    // (gFS) Bits 6:4
+    // The full scale value, i.e., the range.
+    enum QMI8658_GyrRange FullScale;
+
+    // (gODR) Bits 3:0
+    // The gyroscope output data rate.
+    enum QMI8658_GyrOdr OutputDataRate;
+}
+Ctrl3Values;
+
+// Magnetometer settings: Register address 5 (0x05)
+typedef struct
+{
+    // TODO: Not using the magnetometer, so not spending time on it for now.
+    // (mDEV) Bits 6:3
+    // (mODR) Bits 2:0
+}
+Ctrl4Values;
+
+// Low pass filter bandwidth modes (Hz).
+typedef enum 
+{
+    // Accelerometer: Low pass filter 2.62% of ODR.
+    // Gyroscope: 2.62% of ODR.
+    LowPassFilterMode0 = 0b00,
+
+    // Accelerometer: Low pass filter 3.59% of ODR.
+    // Gyroscope: Low pass filter 3.59% of ODR.
+    LowPassFilterMode1 = 0b01,
+
+    // Accelerometer: Low pass filter 5.32% of ODR.
+    // Gyroscope: Low pass filter 5.32% of ODR.
+    LowPassFilterMode2 = 0b10,
+
+    // Accelerometer low pass filter 14.0% of ODR.
+    // Gyroscope: Low pass filter 14.0% of ODR.
+    LowPassFilterMode3 = 0b11
+}
+LowPassFilterMode;
+
+// Sensor data processing settings. Register address: 6 (0x06)
+typedef struct
+{
+    // (gLPF_MODE) Bits 6:5
+    // The gyroscope low pass filter bandwidth.
+    LowPassFilterMode GyroscopeLowPassFilterMode;
+
+    // (gLPF_EN) Bit 4
+    // Whether the gyroscope low pass filter is enabled.
+    bool GyroscopeLowPassFilterEnabled;
+
+    // (aLPF_MODE) Bits 2:1
+    // The accelerometer low pass filter bandwidth.
+    LowPassFilterMode AccelerometerLowPassFilterMode;
+
+    // (aLPF_EN) Bit 0
+    // Whether the accelerometer low pass filter is enabled.
+    bool AccelerometerLowPassFilterEnabled;
+}
+Ctrl5Values;
+
+// Attitude Engine ODR and motion on demand: Address: 7 (0x07)
+typedef struct
+{
+    // (sMoD) Bit 7
+    // Whether motion on demand is enabled. 
+    // Requires Attitue Engine to be enabled (CTRL7 bit 3, "sEN") to enable motion on demand.
+    bool MotionOnDemand;
+
+    // (sODR) Bits 2:0
+    // The output data rate for the Attitude Engine.
+    enum QMI8658_AeOdr AttitudeEngineOutputDataRate;
+}
+Ctrl6Values;
+
+// Enables sensors and configure data reads. Register address: 8 (0x08)
+typedef struct 
+{
+    // (syncSmpl) Whether syncSmpl is enabled.
+    bool SyncSmpl;
+
+    // (sys_hs) Whether the high speed internal clock is used instead of a clock based on ODR.
+    bool HighSpeedClock;
+
+    // (gSN) Whether the gyroscope is in snooze mode (only drive enabled).
+    // Requires gyroscope to be enabled (gEN).
+    bool GyroscopeSnoozeMode;
+
+    // (sEN) Whether Attitude Engine orientation and velocity increment computation is enabled.
+    bool AttitudeEngineEnable;
+
+    // (mEN) Whether the magnetometer is enabled.
+    bool MagnetometerEnable;
+
+    // (gEN) Whether the gyroscope is enabled.
+    bool GyroscopeEnable;
+
+    // (aEN) Whether the accelerometer is enabled.
+    bool AccelerometerEnable;
+}
+Ctrl7Values;
 
 enum
 {
@@ -120,6 +244,166 @@ static void ReadBytes(Qmi8658* module, uint8_t registerAddress, uint8_t *buffer,
 uint16_t DEC_ADC_Read(void)
 {
     return adc_read();
+}
+
+static bool WriteSingle(Qmi8658* module, uint8_t registerAddress, uint8_t value)
+{
+    unsigned int retry = 0;
+    int writeSucceeded = 0;
+    while ((!writeSucceeded || writeSucceeded == PICO_ERROR_GENERIC) && retry++ < 5)
+    {
+        // First tell the module which register we're writing to, then follow it by the value.
+        uint8_t data[2] = { registerAddress, value };
+        writeSucceeded = i2c_write_blocking(module->I2cInstance, module->ModuleSlaveAddress, data, 2, false);
+    }
+
+    return writeSucceeded != PICO_ERROR_GENERIC;
+}
+
+// Starts writing at the given first register address using the first value, then iterates for the given length.
+static unsigned int WriteMultiple(Qmi8658* module, uint8_t firstRegisterAddress, uint8_t *value, size_t length)
+{
+    unsigned int bytesWritten = 0;
+    for (unsigned int i = 0; i < length; i++)
+    {
+        bytesWritten += WriteSingle(module, firstRegisterAddress++, value[i]);
+    }
+
+    return bytesWritten;
+}
+
+// SIM 
+#define CTRL1_SIM_MASK 0b10000000
+
+// SPI_AI
+#define CTRL1_SPI_AI_MASK 0b01000000
+
+// SPI_BE
+#define CTRL1_SPI_BE_MASK 0b00100000
+
+// SensorDisable
+#define CTRL1_SENSOR_DISABLE_MASK 0b00000001
+
+static void ReadCtrl1(Qmi8658* module, Ctrl1Values* out)
+{
+    uint8_t value = 0;
+    ReadBytes(module, QMI8658Register_Ctrl1, &value, 1);
+
+    Ctrl1Values values = 
+    {
+        .Spi3WireMode = !!(value & CTRL1_SIM_MASK),
+        .SerialAutoincrement = !!(value & CTRL1_SPI_AI_MASK),
+        .ReadBigEndian = !!(value & CTRL1_SPI_BE_MASK),
+        .DisableSensors = !!(value & CTRL1_SENSOR_DISABLE_MASK)
+    };
+
+    memcpy(out, &values, sizeof(Ctrl1Values));
+}
+
+static void ConfigureCtrl1(Qmi8658* module, Ctrl1Values* config)
+{
+    WriteSingle(
+        module, 
+        QMI8658Register_Ctrl1, 
+        (config->Spi3WireMode ? CTRL1_SIM_MASK : 0)
+            | (config->SerialAutoincrement ? CTRL1_SPI_AI_MASK : 0)
+            | (config->ReadBigEndian ? CTRL1_SPI_BE_MASK : 0)
+            | (config->DisableSensors ? CTRL1_SENSOR_DISABLE_MASK : 0));
+}
+
+// aST
+#define CTRL2_ACC_SELF_TEST_MASK 0b10000000
+
+// aFS
+#define CTRL2_ACC_FULL_SCALE_MASK 0b01110000
+
+// aODR
+#define CTRL2_ACC_ODR_MASK 0b00001111
+
+static void ConfigureCtrl2(Qmi8658* module, Ctrl2Values* config)
+{
+    WriteSingle(
+        module, 
+        QMI8658Register_Ctrl2, 
+        (config->SelfTest ? CTRL2_ACC_SELF_TEST_MASK : 0)
+            | config->FullScale
+            | config->OutputDataRate);
+}
+
+// gST
+#define CTRL3_GYRO_SELF_TEST_MASK 0b10000000
+
+// gFS
+#define CTRL3_GYRO_FULL_SCALE_MASK 0b01110000
+
+// gODR
+#define CTRL2_GYRO_ODR_MASK 0b00001111
+
+static void ConfigureCtrl3(Qmi8658* module, Ctrl3Values* config)
+{
+    WriteSingle(
+        module, 
+        QMI8658Register_Ctrl3, 
+        (config->SelfTest ? CTRL3_GYRO_SELF_TEST_MASK : 0)
+            | config->FullScale
+            | config->OutputDataRate);
+}
+
+// gLPF_MODE
+#define CTRL5_GYRO_LPF_MODE_MASK 0b01100000
+#define CTRL5_GYRO_LPF_MODE_LSB 5
+
+// gLPF_EN
+#define CTRL5_GYRO_LPF_ENABLE_MASK 0b00010000
+
+// aLPF_MODE
+#define CTRL5_ACC_LPF_MODE_MASK 0b00000110
+#define CTRL5_ACC_LPF_MODE_LSB 1
+
+// aLPF_EN
+#define CTRL5_ACC_LPF_ENABLE_MASK 0b00000001
+
+static void ConfigureCtrl5(Qmi8658* module, Ctrl5Values* config)
+{
+    WriteSingle(
+        module, 
+        QMI8658Register_Ctrl5, 
+        (config->GyroscopeLowPassFilterMode << CTRL5_GYRO_LPF_MODE_LSB)
+            | (config->GyroscopeLowPassFilterEnabled ? CTRL5_GYRO_LPF_ENABLE_MASK : 0)
+            | (config->AccelerometerLowPassFilterMode << CTRL5_ACC_LPF_MODE_LSB)
+            | (config->AccelerometerLowPassFilterEnabled ? CTRL5_ACC_LPF_ENABLE_MASK : 0));
+}
+
+static void ReadCtrl5(Qmi8658* module, Ctrl5Values* out)
+{    
+    uint8_t value = 0;
+    ReadBytes(module, QMI8658Register_Ctrl5, &value, 1);
+
+    Ctrl5Values values = 
+    {
+        .GyroscopeLowPassFilterMode = (value & CTRL5_GYRO_LPF_MODE_MASK) >> CTRL5_GYRO_LPF_MODE_LSB,
+        .GyroscopeLowPassFilterEnabled = !!(value & CTRL5_GYRO_LPF_ENABLE_MASK),
+        .AccelerometerLowPassFilterMode = (value & CTRL5_ACC_LPF_MODE_MASK) >> CTRL5_ACC_LPF_MODE_LSB, 
+        .AccelerometerLowPassFilterEnabled = !!(value & CTRL5_ACC_LPF_ENABLE_MASK)
+    };
+
+    memcpy(out, &values, sizeof(Ctrl1Values));
+}
+
+// static void ReadCtrl6(Qmi8658* module, Ctrl6Values* out)
+// {
+// }
+
+static void WriteCtrl6(Qmi8658* module, Ctrl6Values* out)
+{
+}
+
+// static void ReadCtrl7(Qmi8658* module, Ctrl7Values* out)
+// {
+// }
+
+static void WriteCtrl7(Qmi8658* module, Ctrl7Values* out)
+{
 }
 
 struct InterruptCallback;
@@ -248,32 +532,6 @@ unsigned char QMI8658_write_reg(unsigned char reg, unsigned char value)
         DEV_I2C_Write_Byte(QMI8658_slave_addr, reg, value);
     }
     return ret;
-}
-
-static bool WriteSingle(Qmi8658* module, uint8_t registerAddress, uint8_t value)
-{
-    unsigned int retry = 0;
-    int writeSucceeded = 0;
-    while ((!writeSucceeded || writeSucceeded == PICO_ERROR_GENERIC) && retry++ < 5)
-    {
-        // First tell the module which register we're writing to, then follow it by the value.
-        uint8_t data[2] = { registerAddress, value };
-        writeSucceeded = i2c_write_blocking(module->I2cInstance, module->ModuleSlaveAddress, data, 2, false);
-    }
-
-    return writeSucceeded != PICO_ERROR_GENERIC;
-}
-
-// Starts writing at the given first register address using the first value, then iterates for the given length.
-static unsigned int WriteMultiple(Qmi8658* module, uint8_t firstRegisterAddress, uint8_t *value, size_t length)
-{
-    unsigned int bytesWritten = 0;
-    for (unsigned int i = 0; i < length; i++)
-    {
-        bytesWritten += WriteSingle(module, firstRegisterAddress++, value[i]);
-    }
-
-    return bytesWritten;
 }
 
 unsigned char QMI8658_write_regs(unsigned char reg, unsigned char *value, unsigned char len)
@@ -756,30 +1014,41 @@ static inline void ConfigureAccelerometer(Qmi8658* module, Qmi8658AccelerometerC
             module->Accelerometer.LsbDivider = (1 << 12);
     }
 
-    #define ACC_CONFIG_SELF_TEST_ENABLE 0b10000000
+    ConfigureCtrl2(
+        module, 
+        &(Ctrl2Values)
+        {
+            .SelfTest = config->SelfTestEnabled,
+            .FullScale = config->Range,
+            .OutputDataRate = config->Odr
+        });
 
-    WriteSingle(
-        module,
-        QMI8658Register_Ctrl2, 
-        config->SelfTestEnabled
-            ? (uint8_t)config->Range | (uint8_t)config->Odr | ACC_CONFIG_SELF_TEST_ENABLE
-            : (uint8_t)config->Range | (uint8_t)config->Odr);
+    // #define ACC_CONFIG_SELF_TEST_ENABLE 0b10000000
 
-    uint8_t ctrl5Config = 0;
-    ReadBytes(module, QMI8658Register_Ctrl5, &ctrl5Config, 1);
+    // WriteSingle(
+    //     module,
+    //     QMI8658Register_Ctrl2, 
+    //     config->SelfTestEnabled
+    //         ? (uint8_t)config->Range | (uint8_t)config->Odr | ACC_CONFIG_SELF_TEST_ENABLE
+    //         : (uint8_t)config->Range | (uint8_t)config->Odr);
 
-    #define CTRL5_ACC_LPF_ENABLE 0b00000001
+    // uint8_t ctrl5Config = 0;
+    // ReadBytes(module, QMI8658Register_Ctrl5, &ctrl5Config, 1);
+
+    Ctrl5Values ctrl5Config;
+    ReadCtrl5(module, &ctrl5Config);
+
     if (config->LowPassFilterEnabled)
     {
-        ctrl5Config |= A_LSP_MODE_3;
-        ctrl5Config |= CTRL5_ACC_LPF_ENABLE;
+        ctrl5Config.AccelerometerLowPassFilterMode = LowPassFilterMode3;
+        ctrl5Config.AccelerometerLowPassFilterEnabled = true;
     }
     else
     {
-        ctrl5Config &= ~CTRL5_ACC_LPF_ENABLE;
+        ctrl5Config.AccelerometerLowPassFilterEnabled = false;
     }
 
-    WriteSingle(module, QMI8658Register_Ctrl5, ctrl5Config);
+    ConfigureCtrl5(module, &ctrl5Config);
 }
 
 static inline void ConfigureGyroscope(Qmi8658* module, Qmi8658GyroscopeConfig* config)
@@ -820,14 +1089,23 @@ static inline void ConfigureGyroscope(Qmi8658* module, Qmi8658GyroscopeConfig* c
             break;
     }
 
-    #define GYRO_CONFIG_SELF_TEST_ENABLE 0b10000000
+    ConfigureCtrl3(
+        module,
+        &(Ctrl3Values)
+        {
+            .SelfTest = config->SelfTestEnabled,
+            .FullScale = config->Range,
+            .OutputDataRate = config->Odr
+        });
 
-    WriteSingle(
-        module, 
-        QMI8658Register_Ctrl3, 
-        config->SelfTestEnabled
-            ? (uint8_t)config->Range | (uint8_t)config->Odr | GYRO_CONFIG_SELF_TEST_ENABLE
-            : (uint8_t)config->Range | (uint8_t)config->Odr);
+    // #define GYRO_CONFIG_SELF_TEST_ENABLE 0b10000000
+
+    // WriteSingle(
+    //     module, 
+    //     QMI8658Register_Ctrl3, 
+    //     config->SelfTestEnabled
+    //         ? (uint8_t)config->Range | (uint8_t)config->Odr | GYRO_CONFIG_SELF_TEST_ENABLE
+    //         : (uint8_t)config->Range | (uint8_t)config->Odr);
 
     uint8_t ctrl5Config = 0;
     ReadBytes(module, QMI8658Register_Ctrl5, &ctrl5Config, 1);
@@ -836,7 +1114,7 @@ static inline void ConfigureGyroscope(Qmi8658* module, Qmi8658GyroscopeConfig* c
     if (config->LowPassFilterEnabled)
     {
         ctrl5Config |= G_LSP_MODE_3;
-        ctrl5Config |= CTRL5_GYRO_LPF_ENABLE;
+        ctrl5Config |= CTRL5_GYRO_LPF_ENABLE_MASK;
     }
     else
     {
@@ -847,14 +1125,28 @@ static inline void ConfigureGyroscope(Qmi8658* module, Qmi8658GyroscopeConfig* c
 }
 
 static void ConfigureSensors(
-    Qmi8658* module, 
+    Qmi8658* module,
+    bool enableAttitudeEngine, 
     Qmi8658AccelerometerConfig* accelConfig, 
     Qmi8658GyroscopeConfig* gyroConfig)
 {
-    // Enable serial autoincrement and big endian.
-    WriteSingle(module, QMI8658Register_Ctrl1, CTRL1_SPI_AI_MASK | CTRL1_SPI_BE_MASK);
+    ConfigureCtrl1(
+        module,
+        &(Ctrl1Values)
+        {
+            .SerialAutoincrement = true,
+            .ReadBigEndian = true
+        });
+    // WriteSingle(module, QMI8658Register_Ctrl1, CTRL1_SPI_AI_MASK | CTRL1_SPI_BE_MASK); 
 
-    uint8_t ctrl7Enables = 0;
+    // QMI8658_config_acc(QMI8658_config.accRange, QMI8658_config.accOdr, QMI8658Lpf_Enable, QMI8658St_Disable);
+    // QMI8658_config_gyro(QMI8658_config.gyrRange, QMI8658_config.gyrOdr, QMI8658Lpf_Enable, QMI8658St_Disable);
+    // QMI8658_config_mag(QMI8658_config.magDev, QMI8658_config.magOdr);
+
+    // QMI8658_config.aeOdr = QMI8658AeOdr_128Hz;
+    // QMI8658_write_reg(QMI8658Register_Ctrl6, odr);
+
+    uint8_t ctrl7Enables = enableAttitudeEngine ? QMI8658_CTRL7_AE_ENABLE : 0;
     if (accelConfig && accelConfig->Enabled)
     {
         ctrl7Enables |= QMI8658_CONFIG_ACC_ENABLE;

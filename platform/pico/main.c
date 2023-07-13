@@ -260,6 +260,7 @@ static inline void AppMain()
 
     (*module.ConfigureSensors)(
         &module, 
+        false,
         &((Qmi8658AccelerometerConfig)
         {
             .Enabled = true,
