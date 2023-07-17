@@ -5,13 +5,10 @@
 
 static void UpdateStateNormal(PicoPowerManager*);
 
-static void OnWomWakeEvent(void* payload)
-{
-    // xosc_init();
-}
-
 static void ShutDown(PowerManager* powerManager)
 {
+    PicoPowerManager* this = (PicoPowerManager*)powerManager;
+    (*this->Module->PowerDown)(this->Module);
 }
 
 static void Sleep(PowerManager* powerManager)
@@ -22,7 +19,7 @@ static void Sleep(PowerManager* powerManager)
     (*this->Screen->Base.SetBacklightPercentage)(&this->Screen->Base, 0);
     (*this->Screen->SetSleep)(this->Screen, true);
 
-    QMI8658_enableWakeOnMotion(this->Module, NULL, NULL);
+    (*this->Module->EnableWakeOnMotion)(this->Module, NULL, NULL);
     // vreg_set_voltage(VREG_VOLTAGE_MIN);
     // xosc_dormant();
     while (this->Module->Sleeping)
@@ -31,7 +28,7 @@ static void Sleep(PowerManager* powerManager)
     }
 
     // vreg_set_voltage(VREG_VOLTAGE_DEFAULT);
-    QMI8658_disableWakeOnMotion(this->Module);
+    (*this->Module->DisableWakeOnMotion)(this->Module);
 
     (*this->Screen->SetSleep)(this->Screen, false);
     (*this->Screen->Base.SetBacklightPercentage)(&this->Screen->Base, backlight);
@@ -87,22 +84,36 @@ static void Update(PicoPowerManager* powerManager)
     // QMI8658_read_gyro_xyz(&powerManager->Gyro);
     // QMI8658_read_acc_xyz(&powerManager->Acc);
     // printf("ACC (%f, %f, %f)\n", powerManager->Acc.X, powerManager->Acc.Y, powerManager->Acc.Z);
-    (*powerManager->Module->Gyroscope.Read)(&powerManager->Module->Gyroscope, &powerManager->Gyro);
-    (*powerManager->Module->Accelerometer.Read)(&powerManager->Module->Accelerometer, &powerManager->Acc);
+    // (*powerManager->Module->Gyroscope.Read)(&powerManager->Module->Gyroscope, &powerManager->Gyro);
+    // (*powerManager->Module->Accelerometer.Read)(&powerManager->Module->Accelerometer, &powerManager->Acc);
+
+    // (*powerManager->Module->ReadCombined)(
+    //     powerManager->Module, 
+    //     &powerManager->Acc,
+    //     &powerManager->Gyro);
+
+    // printf(
+    //     "ACC (%f, %f, %f) GYR (%f, %f, %f)\n", 
+    //     powerManager->Acc.X, 
+    //     powerManager->Acc.Y, 
+    //     powerManager->Acc.Z, 
+    //     powerManager->Gyro.X, 
+    //     powerManager->Gyro.Y, 
+    //     powerManager->Gyro.Z);
+
+    QMI8658_MotionCoordinates motion;
+    (*powerManager->MotionDevice->Read)(powerManager->MotionDevice, &motion);
+
     printf(
-        "ACC (%f, %f, %f) GYR (%f, %f, %f)\n", 
-        powerManager->Acc.X, 
-        powerManager->Acc.Y, 
-        powerManager->Acc.Z, 
-        powerManager->Gyro.X, 
-        powerManager->Gyro.Y, 
-        powerManager->Gyro.Z);
+        "Motion (%f, %f, %f)\n", 
+        motion.X, 
+        motion.Y, 
+        motion.Z);
 
-    // if (powerManager->Acc.Y < ACCMAX && powerManager->Acc.Y > -ACCMAX) 
 #define GYRMAX 300.0f
-#define ACCMAX 500.0f
+// #define ACCMAX 500.0f
 
-    if (powerManager->Gyro.X > GYRMAX || powerManager->Gyro.X < -GYRMAX) 
+    if (motion.X > GYRMAX || motion.X < -GYRMAX) 
     {
         (*powerManager->OnMotion)(powerManager);
     }
@@ -112,7 +123,7 @@ static void Update(PicoPowerManager* powerManager)
     }
 }
 
-void PicoPowerManager_Init(LcdScreen* screen, Qmi8658* module, PicoPowerManager* out)
+void PicoPowerManager_Init(LcdScreen* screen, Qmi8658* module, MotionDevice* motionDevice, PicoPowerManager* out)
 {
     PicoPowerManager manager =
     {
@@ -123,6 +134,7 @@ void PicoPowerManager_Init(LcdScreen* screen, Qmi8658* module, PicoPowerManager*
             .ShutDown = ShutDown,
             .GetBattery = GetBattery
         },
+        .MotionDevice = motionDevice,
         .LastMovementTime = time_us_32(),
         .OnMotion = OnMotion,
         .Update = Update,

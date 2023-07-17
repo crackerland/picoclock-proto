@@ -26,6 +26,12 @@
 // * When a reset is issued
 #define SYSTEM_TURN_ON_TIME_MILLIS 1750
 
+// Time t1 
+#define GYRO_WAKE_UP_TIME_MILLIS 60
+
+// Time t2
+#define ACCEL_WAKE_UP_TIME_MILLIS 3 
+
 typedef struct 
 {
     Qmi8658* Module;
@@ -57,7 +63,7 @@ typedef struct
 Ctrl1Values;
 
 // Accelerometer settings. Register address 3 (0x03)
-typedef struct 
+typedef struct  
 {
     // (aST) Bit 7
     // Whether the accelerometer self test is enabled.
@@ -219,31 +225,32 @@ static unsigned int imu_timestamp = 0;
 static struct QMI8658Config QMI8658_config;
 static unsigned char QMI8658_slave_addr = QMI8658_SLAVE_ADDR_L;
 
-void DEV_I2C_Write_Byte(uint8_t addr, uint8_t reg, uint8_t Value)
+typedef enum 
 {
-    uint8_t data[2] = {reg, Value};
-    i2c_write_blocking(I2C_PORT, addr, data, 2, false);
+    I2cReadResult_Success,
+    I2cReadResult_AddressWriteFailed,
+    I2cReadResult_ReadPartial,
+    I2cReadResult_ReadFailed
 }
+I2cReadResult;
 
-void DEV_I2C_Read_nByte(uint8_t addr, uint8_t reg, uint8_t *pData, uint32_t Len)
-{
-    i2c_write_blocking(I2C_PORT, addr, &reg, 1, true);
-    i2c_read_blocking(I2C_PORT, addr, pData, Len, false);
-}
-
-static void ReadBytes(Qmi8658* module, uint8_t registerAddress, uint8_t *buffer, size_t registerReadCount)
+static I2cReadResult ReadBytes(Qmi8658* module, uint8_t registerAddress, uint8_t* buffer, size_t registerReadCount)
 {
     // First tell the module which register to read.
-    i2c_write_blocking(module->I2cInstance, module->ModuleSlaveAddress, &registerAddress, 1, true);
+    int result = i2c_write_blocking(module->I2cInstance, module->ModuleSlaveAddress, &registerAddress, 1, true);
+    if (!result || result == PICO_ERROR_GENERIC)
+    {
+        return I2cReadResult_AddressWriteFailed;
+    }
 
     // Then read the contents, starting at the first register until `registerReadCount`.
     // Since we enabled autoincrement, it will automatically move to each register.
-    i2c_read_blocking(module->I2cInstance, module->ModuleSlaveAddress, buffer, registerReadCount, false);
-}
-
-uint16_t DEC_ADC_Read(void)
-{
-    return adc_read();
+    result = i2c_read_blocking(module->I2cInstance, module->ModuleSlaveAddress, buffer, registerReadCount, false);
+    return result == registerReadCount
+        ? I2cReadResult_Success
+        : result > 0 && result != PICO_ERROR_GENERIC
+            ? I2cReadResult_ReadPartial
+            : I2cReadResult_ReadFailed;
 }
 
 static bool WriteSingle(Qmi8658* module, uint8_t registerAddress, uint8_t value)
@@ -270,6 +277,115 @@ static unsigned int WriteMultiple(Qmi8658* module, uint8_t firstRegisterAddress,
     }
 
     return bytesWritten;
+}
+
+static inline unsigned int HertzToMillis(float hertz)
+{
+    return (unsigned int)1.0f / hertz * 1000;
+}
+
+static inline float GetGyroOdrHertz(enum QMI8658_GyrOdr odr)
+{
+    switch (odr)
+    {
+        case QMI8658GyrOdr_8000Hz:
+            return 8000;
+
+        case QMI8658GyrOdr_4000Hz:
+            return 4000;
+
+        case QMI8658GyrOdr_2000Hz:
+            return 2000;
+
+        case QMI8658GyrOdr_1000Hz:
+            return 1000;
+
+        case QMI8658GyrOdr_500Hz:
+            return 500;
+
+        case QMI8658GyrOdr_250Hz:
+            return 250;
+
+        case QMI8658GyrOdr_125Hz:
+            return 125;
+
+        case QMI8658GyrOdr_62_5Hz:
+            return 62;
+
+        case QMI8658GyrOdr_31_25Hz:
+            return 31.25;
+    }
+
+    return 0;
+}
+
+static inline float GetAccelOdrHertz(enum QMI8658_AccOdr odr)
+{
+    switch (odr)
+    {
+        case QMI8658AccOdr_8000Hz:
+            return 8000;
+
+        case QMI8658AccOdr_4000Hz:
+            return 4000;
+
+        case QMI8658AccOdr_2000Hz:
+            return 2000;
+
+        case QMI8658AccOdr_1000Hz:
+            return 1000;
+
+        case QMI8658AccOdr_500Hz:
+            return 500;
+
+        case QMI8658AccOdr_250Hz:
+            return 250;
+
+        case QMI8658AccOdr_125Hz:
+            return 125;
+
+        case QMI8658AccOdr_62_5Hz:
+            return 62.5;
+
+        case QMI8658AccOdr_31_25Hz:
+            return 31.25;
+
+        case QMI8658AccOdr_LowPower_128Hz:
+            return 128;
+
+        case QMI8658AccOdr_LowPower_21Hz:
+            return 21;
+
+        case QMI8658AccOdr_LowPower_11Hz:
+            return 11;
+
+        case QMI8658AccOdr_LowPower_3Hz:
+            return 3;
+    }
+
+    return 0;
+}
+
+// (Table 8) Gyro Turn On Time = 60 ms + 3/ODR 
+// 
+// (7.2) The Gyro Turn on Time (see Table 8) is comprised
+// of t1 (the gyroscope wakeup time) and t5 (the part’s
+// filter settling time). t1 is typically 60 ms and t5 is
+// defined as 3/ODR, where ODR is the output data
+// rate in Hertz.
+static inline unsigned int GetGyroTurnOnTimeMicros(enum QMI8658_GyrOdr odr)
+{ 
+    return (unsigned int)(GYRO_WAKE_UP_TIME_MILLIS + (3.0f / HertzToMillis(GetGyroOdrHertz(odr)))) * 1000;
+}
+
+// The Accel Turn on Time (see Table 7) is comprised
+// of t2 (the accelerometer wakeup time) and t5 (the
+// part’s filter settling time). t2 is typically 3 ms, and t5
+// is defined as 3/ODR, where ODR is the output data
+// rate in Hertz
+static inline unsigned int GetAccelTurnOnTimeMicros(enum QMI8658_AccOdr odr)
+{ 
+    return (unsigned int)(ACCEL_WAKE_UP_TIME_MILLIS + (3.0f / HertzToMillis(GetAccelOdrHertz(odr)))) * 1000;
 }
 
 // SIM 
@@ -390,39 +506,72 @@ static void ReadCtrl5(Qmi8658* module, Ctrl5Values* out)
     memcpy(out, &values, sizeof(Ctrl1Values));
 }
 
-// static void ReadCtrl6(Qmi8658* module, Ctrl6Values* out)
-// {
-// }
+// sMoD
+#define CTRL6_MOD_ENABLE_MASK 0b10000000
 
-static void WriteCtrl6(Qmi8658* module, Ctrl6Values* out)
-{
+// sODR
+#define CTRL6_AE_ODR_ENABLE_MASK 0b00000111
+
+static void ConfigureCtrl6(Qmi8658* module, Ctrl6Values* config)
+{    
+    WriteSingle(
+        module, 
+        QMI8658Register_Ctrl6, 
+        (config->MotionOnDemand ? CTRL6_MOD_ENABLE_MASK : 0)
+            | config->AttitudeEngineOutputDataRate);
 }
 
-// static void ReadCtrl7(Qmi8658* module, Ctrl7Values* out)
-// {
-// }
+// syncSmpl
+#define CTRL7_SYNC_SMPL_MASK 0b10000000
 
-static void WriteCtrl7(Qmi8658* module, Ctrl7Values* out)
+// sys_hs
+#define CTRL7_SYS_HS_MASK 0b01000000
+
+// gSN
+#define CTRL7_G_SN_MASK 0b00010000
+
+// sEN
+#define CTRL7_S_EN_MASK 0b00001000
+
+// mEN
+#define CTRL7_M_EN_MASK 0b00000100
+
+// gEN
+#define CTRL7_G_EN_MASK 0b00000010
+
+// aEN
+#define CTRL7_A_EN_MASK 0b00000001
+
+static void ConfigureCtrl7(Qmi8658* module, Ctrl7Values* config)
 {
+    WriteSingle(
+        module, 
+        QMI8658Register_Ctrl7, 
+        (config->SyncSmpl ? CTRL7_SYNC_SMPL_MASK : 0)
+            | (config->HighSpeedClock ? CTRL7_SYS_HS_MASK : 0)
+            | (config->GyroscopeSnoozeMode ? CTRL7_G_SN_MASK : 0)
+            | (config->AttitudeEngineEnable ? CTRL7_S_EN_MASK : 0)
+            | (config->MagnetometerEnable ? CTRL7_M_EN_MASK : 0)
+            | (config->GyroscopeEnable ? CTRL7_G_EN_MASK : 0)
+            | (config->AccelerometerEnable ? CTRL7_A_EN_MASK : 0));
 }
 
-struct InterruptCallback;
-typedef void (*InterruptCallbackHandler)(struct InterruptCallback* callback, uint8_t status);
-
-typedef struct InterruptCallback
+typedef struct GpioInterruptCallback
 {
-    InterruptCallbackHandler OnInterruptReceived;
-    void* Payload;
-    struct InterruptCallback* Next;
+    void (*OnInterruptReceived)(Qmi8658* module);
+    Qmi8658* Module;
 }
-InterruptCallback;
+GpioInterruptCallback;
 
-static InterruptCallback* CreateInterruptCallback(InterruptCallbackHandler onInterruptReceived, void* payload)
+GpioInterruptCallback gpioInterruptCallback;
+
+static InterruptCallback* CreateInterruptCallback(Qmi8658* module, InterruptCallbackHandler onInterruptReceived, void* payload)
 {
     InterruptCallback callback = 
     {
         .OnInterruptReceived = onInterruptReceived,
-        .Payload = payload
+        .Payload = payload,
+        .Module = module
     }; 
 
     InterruptCallback* out = (InterruptCallback*)malloc(sizeof(InterruptCallback));
@@ -430,14 +579,12 @@ static InterruptCallback* CreateInterruptCallback(InterruptCallbackHandler onInt
     return out;
 }
 
-InterruptCallback* interrupt1Callbacks;
-
-static void AddInterrupt1Callback(InterruptCallback* callback)
+static void AddInterrupt1Callback(Qmi8658* module, InterruptCallback* callback)
 {
-    InterruptCallback* next = interrupt1Callbacks;
+    InterruptCallback* next = module->Interrupt1Callbacks;
     if (!next)
     {
-        interrupt1Callbacks = callback;
+        module->Interrupt1Callbacks = callback;
     }
     else
     {
@@ -450,15 +597,15 @@ static void AddInterrupt1Callback(InterruptCallback* callback)
     }
 }
 
-static void RemoveInterruptCallback(InterruptCallback* callback)
+static void RemoveInterruptCallback(Qmi8658* module, InterruptCallback* callback)
 {
-    if (interrupt1Callbacks == callback)
+    if (module->Interrupt1Callbacks == callback)
     {
-        interrupt1Callbacks = callback->Next; 
+        module->Interrupt1Callbacks = callback->Next; 
     }
     else
     {
-        InterruptCallback* next = interrupt1Callbacks;
+        InterruptCallback* next = module->Interrupt1Callbacks;
         while (next)
         {
             if (next->Next == callback)
@@ -470,7 +617,22 @@ static void RemoveInterruptCallback(InterruptCallback* callback)
     }
 }
 
-static void OnInterrupt1(uint gpio, uint32_t eventMask)
+static void OnInterrupt1(Qmi8658* module)
+{
+    // Acknowledge interrupt and reset the status by reading.
+    uint8_t status;
+    ReadBytes(module, QMI8658Register_Status1, &status, 1);
+
+    InterruptCallback* next = module->Interrupt1Callbacks;
+    while (next)
+    {
+        InterruptCallback* nextNext = next->Next;
+        (*next->OnInterruptReceived)(next, status);
+        next = nextNext;
+    }
+}
+
+static void OnGpioInterrupt1Received(uint gpio, uint32_t eventMask)
 {
     if (gpio != IMU_INT1_GPIO_PIN)
     {
@@ -479,18 +641,7 @@ static void OnInterrupt1(uint gpio, uint32_t eventMask)
     }
 
     gpio_acknowledge_irq(gpio, eventMask);
-
-    // Acknowledge interrupt and reset the status by reading.
-    uint8_t status;
-    QMI8658_read_reg(QMI8658Register_Status1, &status, 1);
-
-    InterruptCallback* next = interrupt1Callbacks;
-    while (next)
-    {
-        InterruptCallback* nextNext = next->Next;
-        (*next->OnInterruptReceived)(next, status);
-        next = nextNext;
-    }
+    (*gpioInterruptCallback.OnInterruptReceived)(gpioInterruptCallback.Module);
 }
 
 static void OnCtrl9CommandExecuted(InterruptCallback* callback, uint8_t status)
@@ -501,7 +652,7 @@ static void OnCtrl9CommandExecuted(InterruptCallback* callback, uint8_t status)
     // }
 
     *((bool*)callback->Payload) = false;
-    RemoveInterruptCallback(callback);
+    RemoveInterruptCallback(callback->Module, callback);
 }
 
 static void OnWomEvent(InterruptCallback* callback, uint8_t status)
@@ -518,217 +669,54 @@ static void OnWomEvent(InterruptCallback* callback, uint8_t status)
         (*payload->Callback)(payload->CallbackPayload);
     }
     
-    RemoveInterruptCallback(callback);
+    RemoveInterruptCallback(callback->Module, callback);
     free(payload);
 }
 
-unsigned char QMI8658_write_reg(unsigned char reg, unsigned char value)
-{
-    unsigned char ret = 0;
-    unsigned int retry = 0;
+// void QMI8658_config_mag(enum QMI8658_MagDev device, enum QMI8658_MagOdr odr)
+// {
+//     QMI8658_write_reg(QMI8658Register_Ctrl4, device | odr);
+// }
 
-    while ((!ret) && (retry++ < 5))
-    {
-        DEV_I2C_Write_Byte(QMI8658_slave_addr, reg, value);
-    }
-    return ret;
-}
+// void QMI8658_config_ae(enum QMI8658_AeOdr odr)
+// {
+//     // QMI8658_config_acc(QMI8658AccRange_8g, AccOdr_1000Hz, Lpf_Enable, St_Enable);
+//     // QMI8658_config_gyro(QMI8658GyrRange_2048dps, GyrOdr_1000Hz, Lpf_Enable, St_Enable);
+//     QMI8658_config_acc(QMI8658_config.accRange, QMI8658_config.accOdr, QMI8658Lpf_Enable, QMI8658St_Disable);
+//     QMI8658_config_gyro(QMI8658_config.gyrRange, QMI8658_config.gyrOdr, QMI8658Lpf_Enable, QMI8658St_Disable);
+//     QMI8658_config_mag(QMI8658_config.magDev, QMI8658_config.magOdr);
+//     QMI8658_write_reg(QMI8658Register_Ctrl6, odr);
+// }
 
-unsigned char QMI8658_write_regs(unsigned char reg, unsigned char *value, unsigned char len)
-{
-    int i, ret;
+// float QMI8658_readTemp(void)
+// {
+//     unsigned char buf[2];
+//     short temp = 0;
+//     float temp_f = 0;
 
-    for (i = 0; i < len; i++)
-    {
-        ret = QMI8658_write_reg(reg + i, value[i]);
-    }
+//     QMI8658_read_reg(QMI8658Register_Tempearture_L, buf, 2);
+//     temp = ((short)buf[1] << 8) | buf[0];
+//     temp_f = (float)temp / 256.0f;
 
-    return ret;
-}
+//     return temp_f;
+// }
 
-unsigned char QMI8658_read_reg(unsigned char reg, unsigned char *buf, unsigned short len)
-{
-    unsigned char ret = 0;
-    unsigned int retry = 0;
-    DEV_I2C_Read_nByte(QMI8658_slave_addr, reg, buf, len);
+// unsigned int QMI8658_read_timestamp()
+// {
+//     unsigned char buf[3];
+//     QMI8658_read_reg(QMI8658Register_Timestamp_L, buf, 3); // 0x18	24
+//     unsigned int timestamp = (unsigned int)(((unsigned int)buf[2] << 16) | ((unsigned int)buf[1] << 8) | buf[0]);
+//     if (timestamp > imu_timestamp)
+//     {
+//         imu_timestamp = timestamp;
+//     }
+//     else
+//     {
+//         imu_timestamp = (timestamp + 0x1000000 - imu_timestamp);
+//     }
 
-    return ret;
-}
-
-void QMI8658_config_acc(enum QMI8658_AccRange range, enum QMI8658_AccOdr odr, enum QMI8658_LpfConfig lpfEnable, enum QMI8658_StConfig stEnable)
-{
-    unsigned char ctl_dada;
-
-    switch (range)
-    {
-    case QMI8658AccRange_2g:
-        acc_lsb_div = (1 << 14);
-        break;
-    case QMI8658AccRange_4g:
-        acc_lsb_div = (1 << 13);
-        break;
-    case QMI8658AccRange_8g:
-        acc_lsb_div = (1 << 12);
-        break;
-    case QMI8658AccRange_16g:
-        acc_lsb_div = (1 << 11);
-        break;
-    default:
-        range = QMI8658AccRange_8g;
-        acc_lsb_div = (1 << 12);
-    }
-    if (stEnable == QMI8658St_Enable)
-        ctl_dada = (unsigned char)range | (unsigned char)odr | 0x80;
-    else
-        ctl_dada = (unsigned char)range | (unsigned char)odr;
-
-    QMI8658_write_reg(QMI8658Register_Ctrl2, ctl_dada);
-    // set LPF & HPF
-    QMI8658_read_reg(QMI8658Register_Ctrl5, &ctl_dada, 1);
-
-    ctl_dada &= 0xf0;
-    if (lpfEnable == QMI8658Lpf_Enable)
-    {
-        ctl_dada |= A_LSP_MODE_3;
-        ctl_dada |= 0x01;
-    }
-    else
-    {
-        ctl_dada &= ~0x01;
-    }
-    ctl_dada = 0x00;
-    QMI8658_write_reg(QMI8658Register_Ctrl5, ctl_dada);
-    // set LPF & HPF
-}
-
-void QMI8658_config_gyro(enum QMI8658_GyrRange range, enum QMI8658_GyrOdr odr, enum QMI8658_LpfConfig lpfEnable, enum QMI8658_StConfig stEnable)
-{
-    // Set the CTRL3 register to configure dynamic range and ODR
-    unsigned char ctl_dada;
-
-    // Store the scale factor for use when processing raw data
-    switch (range)
-    {
-    case QMI8658GyrRange_32dps:
-        gyro_lsb_div = 1024;
-        break;
-    case QMI8658GyrRange_64dps:
-        gyro_lsb_div = 512;
-        break;
-    case QMI8658GyrRange_128dps:
-        gyro_lsb_div = 256;
-        break;
-    case QMI8658GyrRange_256dps:
-        gyro_lsb_div = 128;
-        break;
-    case QMI8658GyrRange_512dps:
-        gyro_lsb_div = 64;
-        break;
-    case QMI8658GyrRange_1024dps:
-        gyro_lsb_div = 32;
-        break;
-    case QMI8658GyrRange_2048dps:
-        gyro_lsb_div = 16;
-        break;
-    // case QMI8658GyrRange_4096dps:
-    //     gyro_lsb_div = 8;
-    //     break;
-    default:
-        range = QMI8658GyrRange_512dps;
-        gyro_lsb_div = 64;
-        break;
-    }
-
-    if (stEnable == QMI8658St_Enable)
-        ctl_dada = (unsigned char)range | (unsigned char)odr | 0x80;
-    else
-        ctl_dada = (unsigned char)range | (unsigned char)odr;
-    QMI8658_write_reg(QMI8658Register_Ctrl3, ctl_dada);
-
-    // Conversion from degrees/s to rad/s if necessary
-    // set LPF & HPF
-    QMI8658_read_reg(QMI8658Register_Ctrl5, &ctl_dada, 1);
-    ctl_dada &= 0x0f;
-    if (lpfEnable == QMI8658Lpf_Enable)
-    {
-        ctl_dada |= G_LSP_MODE_3;
-        ctl_dada |= 0x10;
-    }
-    else
-    {
-        ctl_dada &= ~0x10;
-    }
-    ctl_dada = 0x00;
-    QMI8658_write_reg(QMI8658Register_Ctrl5, ctl_dada);
-    // set LPF & HPF
-}
-
-void QMI8658_config_mag(enum QMI8658_MagDev device, enum QMI8658_MagOdr odr)
-{
-    QMI8658_write_reg(QMI8658Register_Ctrl4, device | odr);
-}
-
-void QMI8658_config_ae(enum QMI8658_AeOdr odr)
-{
-    // QMI8658_config_acc(QMI8658AccRange_8g, AccOdr_1000Hz, Lpf_Enable, St_Enable);
-    // QMI8658_config_gyro(QMI8658GyrRange_2048dps, GyrOdr_1000Hz, Lpf_Enable, St_Enable);
-    QMI8658_config_acc(QMI8658_config.accRange, QMI8658_config.accOdr, QMI8658Lpf_Enable, QMI8658St_Disable);
-    QMI8658_config_gyro(QMI8658_config.gyrRange, QMI8658_config.gyrOdr, QMI8658Lpf_Enable, QMI8658St_Disable);
-    QMI8658_config_mag(QMI8658_config.magDev, QMI8658_config.magOdr);
-    QMI8658_write_reg(QMI8658Register_Ctrl6, odr);
-}
-
-unsigned char QMI8658_readStatus0(void)
-{
-    unsigned char status[2];
-
-    QMI8658_read_reg(QMI8658Register_Status0, status, sizeof(status));
-    // printf("status[0x%x	0x%x]\n",status[0],status[1]);
-
-    return status[0];
-}
-/*!
- * \brief Blocking read of data status register 1 (::QMI8658Register_Status1).
- * \returns Status byte \see STATUS1 for flag definitions.
- */
-unsigned char QMI8658_readStatus1(void)
-{
-    unsigned char status;
-
-    QMI8658_read_reg(QMI8658Register_Status1, &status, sizeof(status));
-
-    return status;
-}
-
-float QMI8658_readTemp(void)
-{
-    unsigned char buf[2];
-    short temp = 0;
-    float temp_f = 0;
-
-    QMI8658_read_reg(QMI8658Register_Tempearture_L, buf, 2);
-    temp = ((short)buf[1] << 8) | buf[0];
-    temp_f = (float)temp / 256.0f;
-
-    return temp_f;
-}
-
-unsigned int QMI8658_read_timestamp()
-{
-    unsigned char buf[3];
-    QMI8658_read_reg(QMI8658Register_Timestamp_L, buf, 3); // 0x18	24
-    unsigned int timestamp = (unsigned int)(((unsigned int)buf[2] << 16) | ((unsigned int)buf[1] << 8) | buf[0]);
-    if (timestamp > imu_timestamp)
-    {
-        imu_timestamp = timestamp;
-    }
-    else
-    {
-        imu_timestamp = (timestamp + 0x1000000 - imu_timestamp);
-    }
-
-    return imu_timestamp;
-}
+//     return imu_timestamp;
+// }
 
 static inline float ReadAccAxis(MotionDevice* device, short lo, short hi)
 {
@@ -740,150 +728,269 @@ static inline float ReadGyroAxis(MotionDevice* device, short lo, short hi)
     return (float)(((short)((unsigned short)(hi << 8) | lo)) * 1.0f) / device->LsbDivider;
 }
 
-// void QMI8658_read_acc_xyz(QMI8658_MotionCoordinates* acc)
-// {
-//     unsigned char registersBuffer[6];
-//     QMI8658_read_reg(QMI8658Register_Ax_L, registersBuffer, 6); // 0x19, 25
-//     acc->X = ReadAccAxis(registersBuffer[0], registersBuffer[1]);
-//     acc->Y = ReadAccAxis(registersBuffer[2], registersBuffer[3]);
-//     acc->Z = ReadAccAxis(registersBuffer[4], registersBuffer[5]);
-// }
-
 static void ReadAccelerometer(MotionDevice* device, QMI8658_MotionCoordinates* acc)
 {
-    unsigned char registersBuffer[6];
+    unsigned char registersBuffer[6] = { };
     ReadBytes(device->Module, QMI8658Register_Ax_L, registersBuffer, 6);
     acc->X = ReadAccAxis(device, registersBuffer[0], registersBuffer[1]);
     acc->Y = ReadAccAxis(device, registersBuffer[2], registersBuffer[3]);
     acc->Z = ReadAccAxis(device, registersBuffer[4], registersBuffer[5]);
 }
 
-// void QMI8658_read_gyro_xyz(QMI8658_MotionCoordinates* gyro)
-// {
-//     unsigned char registersBuffer[6];
-//     QMI8658_read_reg(QMI8658Register_Gx_L, registersBuffer, 6); // 0x1f, 31
-//     gyro->X = ReadGyroAxis(registersBuffer[0], registersBuffer[1]);
-//     gyro->Y = ReadGyroAxis(registersBuffer[2], registersBuffer[3]);
-//     gyro->Z = ReadGyroAxis(registersBuffer[4], registersBuffer[5]);
-// }
-
 static void ReadGyro(MotionDevice* device, QMI8658_MotionCoordinates* gyro)
 {
-    uint8_t registersBuffer[6];
+    uint8_t registersBuffer[6] = { };
     ReadBytes(device->Module, QMI8658Register_Gx_L, registersBuffer, 6); // 0x1f, 31
     gyro->X = ReadGyroAxis(device, registersBuffer[0], registersBuffer[1]);
     gyro->Y = ReadGyroAxis(device, registersBuffer[2], registersBuffer[3]);
     gyro->Z = ReadGyroAxis(device, registersBuffer[4], registersBuffer[5]);
 }
 
-// void QMI8658_read_xyz(QMI8658_MotionCoordinates* acc, QMI8658_MotionCoordinates* gyro)
+// static void ReadCombined(Qmi8658* module, QMI8658_MotionCoordinates* acc, QMI8658_MotionCoordinates* gyro)
 // {
 //     // ACC: Registers 53-58 (0x35 – 0x3A)
 //     // GYR: Registers 59-64 (0x3B – 0x40)
 //     // Start at register 53 and read 12 to get both in one shot.
-//     unsigned char buf_reg[12];
-//     QMI8658_read_reg(QMI8658Register_Ax_L, buf_reg, 12);
-//     acc->X = ReadAccAxis(buf_reg[0], buf_reg[1]);
-//     acc->Y = ReadAccAxis(buf_reg[2], buf_reg[3]);
-//     acc->Z = ReadAccAxis(buf_reg[4], buf_reg[5]);
-//     gyro->X = ReadGyroAxis(buf_reg[6], buf_reg[7]);
-//     gyro->Y = ReadGyroAxis(buf_reg[8], buf_reg[9]);
-//     gyro->Z = ReadGyroAxis(buf_reg[10], buf_reg[11]);
+//     unsigned char registersBuffer[12];
+//     ReadBytes(module, QMI8658Register_Ax_L, registersBuffer, 12);
+//     acc->X = ReadAccAxis(&module->Accelerometer, registersBuffer[0], registersBuffer[1]);
+//     acc->Y = ReadAccAxis(&module->Accelerometer, registersBuffer[2], registersBuffer[3]);
+//     acc->Z = ReadAccAxis(&module->Accelerometer, registersBuffer[4], registersBuffer[5]);
+//     gyro->X = ReadGyroAxis(&module->Gyroscope, registersBuffer[6], registersBuffer[7]);
+//     gyro->Y = ReadGyroAxis(&module->Gyroscope, registersBuffer[8], registersBuffer[9]);
+//     gyro->Z = ReadGyroAxis(&module->Gyroscope, registersBuffer[10], registersBuffer[11]);
 // }
 
-static void ReadCombined(Qmi8658* module, QMI8658_MotionCoordinates* acc, QMI8658_MotionCoordinates* gyro)
-{
-    // ACC: Registers 53-58 (0x35 – 0x3A)
-    // GYR: Registers 59-64 (0x3B – 0x40)
-    // Start at register 53 and read 12 to get both in one shot.
-    unsigned char registersBuffer[12];
-    ReadBytes(module, QMI8658Register_Ax_L, registersBuffer, 12);
-    acc->X = ReadAccAxis(&module->Accelerometer, registersBuffer[0], registersBuffer[1]);
-    acc->Y = ReadAccAxis(&module->Accelerometer, registersBuffer[2], registersBuffer[3]);
-    acc->Z = ReadAccAxis(&module->Accelerometer, registersBuffer[4], registersBuffer[5]);
-    gyro->X = ReadGyroAxis(&module->Gyroscope, registersBuffer[6], registersBuffer[7]);
-    gyro->Y = ReadGyroAxis(&module->Gyroscope, registersBuffer[8], registersBuffer[9]);
-    gyro->Z = ReadGyroAxis(&module->Gyroscope, registersBuffer[10], registersBuffer[11]);
-}
+// void QMI8658_read_ae(float quat[4], float velocity[3])
+// {
+//     unsigned char buf_reg[14];
+//     short raw_q_xyz[4];
+//     short raw_v_xyz[3];
 
-void QMI8658_read_xyz_raw(short raw_acc_xyz[3], short raw_gyro_xyz[3])
-{
-    unsigned char buf_reg[12];
+//     QMI8658_read_reg(QMI8658Register_Q1_L, buf_reg, 14);
+//     raw_q_xyz[0] = (short)((unsigned short)(buf_reg[1] << 8) | (buf_reg[0]));
+//     raw_q_xyz[1] = (short)((unsigned short)(buf_reg[3] << 8) | (buf_reg[2]));
+//     raw_q_xyz[2] = (short)((unsigned short)(buf_reg[5] << 8) | (buf_reg[4]));
+//     raw_q_xyz[3] = (short)((unsigned short)(buf_reg[7] << 8) | (buf_reg[6]));
 
-    QMI8658_read_reg(QMI8658Register_Ax_L, buf_reg, 12); // 0x19, 25
+//     raw_v_xyz[1] = (short)((unsigned short)(buf_reg[9] << 8) | (buf_reg[8]));
+//     raw_v_xyz[2] = (short)((unsigned short)(buf_reg[11] << 8) | (buf_reg[10]));
+//     raw_v_xyz[2] = (short)((unsigned short)(buf_reg[13] << 8) | (buf_reg[12]));
 
-    raw_acc_xyz[0] = (short)((unsigned short)(buf_reg[1] << 8) | (buf_reg[0]));
-    raw_acc_xyz[1] = (short)((unsigned short)(buf_reg[3] << 8) | (buf_reg[2]));
-    raw_acc_xyz[2] = (short)((unsigned short)(buf_reg[5] << 8) | (buf_reg[4]));
+//     quat[0] = (float)(raw_q_xyz[0] * 1.0f) / ae_q_lsb_div;
+//     quat[1] = (float)(raw_q_xyz[1] * 1.0f) / ae_q_lsb_div;
+//     quat[2] = (float)(raw_q_xyz[2] * 1.0f) / ae_q_lsb_div;
+//     quat[3] = (float)(raw_q_xyz[3] * 1.0f) / ae_q_lsb_div;
 
-    raw_gyro_xyz[0] = (short)((unsigned short)(buf_reg[7] << 8) | (buf_reg[6]));
-    raw_gyro_xyz[1] = (short)((unsigned short)(buf_reg[9] << 8) | (buf_reg[8]));
-    raw_gyro_xyz[2] = (short)((unsigned short)(buf_reg[11] << 8) | (buf_reg[10]));
-}
+//     velocity[0] = (float)(raw_v_xyz[0] * 1.0f) / ae_v_lsb_div;
+//     velocity[1] = (float)(raw_v_xyz[1] * 1.0f) / ae_v_lsb_div;
+//     velocity[2] = (float)(raw_v_xyz[2] * 1.0f) / ae_v_lsb_div;
+// }
 
-void QMI8658_read_ae(float quat[4], float velocity[3])
-{
-    unsigned char buf_reg[14];
-    short raw_q_xyz[4];
-    short raw_v_xyz[3];
+// void QMI8658_read_mag(float mag[3])
+// {
+//     unsigned char buf_reg[6];
+//     short mag_xyz[3];
 
-    QMI8658_read_reg(QMI8658Register_Q1_L, buf_reg, 14);
-    raw_q_xyz[0] = (short)((unsigned short)(buf_reg[1] << 8) | (buf_reg[0]));
-    raw_q_xyz[1] = (short)((unsigned short)(buf_reg[3] << 8) | (buf_reg[2]));
-    raw_q_xyz[2] = (short)((unsigned short)(buf_reg[5] << 8) | (buf_reg[4]));
-    raw_q_xyz[3] = (short)((unsigned short)(buf_reg[7] << 8) | (buf_reg[6]));
+//     QMI8658_read_reg(QMI8658Register_Mx_L, buf_reg, 6); // 0x1f, 31
+//     mag_xyz[0] = (short)((unsigned short)(buf_reg[1] << 8) | (buf_reg[0]));
+//     mag_xyz[1] = (short)((unsigned short)(buf_reg[3] << 8) | (buf_reg[2]));
+//     mag_xyz[2] = (short)((unsigned short)(buf_reg[5] << 8) | (buf_reg[4]));
+//     mag[0]=(float)mag_xyz[0];
+//     mag[1]=(float)mag_xyz[1];
+//     mag[2]=(float)mag_xyz[2];
+// }
 
-    raw_v_xyz[1] = (short)((unsigned short)(buf_reg[9] << 8) | (buf_reg[8]));
-    raw_v_xyz[2] = (short)((unsigned short)(buf_reg[11] << 8) | (buf_reg[10]));
-    raw_v_xyz[2] = (short)((unsigned short)(buf_reg[13] << 8) | (buf_reg[12]));
-
-    quat[0] = (float)(raw_q_xyz[0] * 1.0f) / ae_q_lsb_div;
-    quat[1] = (float)(raw_q_xyz[1] * 1.0f) / ae_q_lsb_div;
-    quat[2] = (float)(raw_q_xyz[2] * 1.0f) / ae_q_lsb_div;
-    quat[3] = (float)(raw_q_xyz[3] * 1.0f) / ae_q_lsb_div;
-
-    velocity[0] = (float)(raw_v_xyz[0] * 1.0f) / ae_v_lsb_div;
-    velocity[1] = (float)(raw_v_xyz[1] * 1.0f) / ae_v_lsb_div;
-    velocity[2] = (float)(raw_v_xyz[2] * 1.0f) / ae_v_lsb_div;
-}
-
-void QMI8658_read_mag(float mag[3])
-{
-    unsigned char buf_reg[6];
-    short mag_xyz[3];
-
-    QMI8658_read_reg(QMI8658Register_Mx_L, buf_reg, 6); // 0x1f, 31
-    mag_xyz[0] = (short)((unsigned short)(buf_reg[1] << 8) | (buf_reg[0]));
-    mag_xyz[1] = (short)((unsigned short)(buf_reg[3] << 8) | (buf_reg[2]));
-    mag_xyz[2] = (short)((unsigned short)(buf_reg[5] << 8) | (buf_reg[4]));
-    mag[0]=(float)mag_xyz[0];
-    mag[1]=(float)mag_xyz[1];
-    mag[2]=(float)mag_xyz[2];
-}
-
-static void RunCtrl9WriteCommand(enum QMI8658_Ctrl9Command command, CalibrationData* registers)
+static void RunCtrl9WriteCommand(Qmi8658* module, enum QMI8658_Ctrl9Command command, CalibrationData* registers)
 {
     for (unsigned int i = 0; i < registers->RegisterCount; i++)
     {
         CalibrationRegisterData* data = &registers->Registers[i];
-        QMI8658_write_reg(data->Register, data->Value);
+        WriteSingle(module, data->Register, data->Value);
     }
 
     bool waiting = true;
-    AddInterrupt1Callback(CreateInterruptCallback(OnCtrl9CommandExecuted, &waiting));
+    AddInterrupt1Callback(module, CreateInterruptCallback(module, OnCtrl9CommandExecuted, &waiting));
 
-    QMI8658_write_reg(QMI8658Register_Ctrl9, command);
+    WriteSingle(module, QMI8658Register_Ctrl9, command);
 
     while (waiting)
     {
         tight_loop_contents(); // NO OP
     }
 
-    uint8_t status;
-    QMI8658_read_reg(QMI8658Register_Status1, &status, 1);
+    // uint8_t status;
+    // ReadBytes(module, QMI8658Register_Status1, &status, 1);
 }
 
-void QMI8658_enableWakeOnMotion(Qmi8658* module, void (*onWake)(void* payload), void* callbackPayload)
+// Returns the LSB divider based on data rate.
+static inline unsigned short ConfigureAccelerometer(Qmi8658* module, Qmi8658AccelerometerConfig* config)
+{
+    ConfigureCtrl2(
+        module, 
+        &(Ctrl2Values)
+        {
+            .SelfTest = config->SelfTestEnabled,
+            .FullScale = config->Range,
+            .OutputDataRate = config->Odr
+        });
+
+    Ctrl5Values ctrl5Config;
+    ReadCtrl5(module, &ctrl5Config);
+
+    if (config->LowPassFilterEnabled)
+    {
+        ctrl5Config.AccelerometerLowPassFilterMode = LowPassFilterMode3;
+        ctrl5Config.AccelerometerLowPassFilterEnabled = true;
+    }
+    else
+    {
+        ctrl5Config.AccelerometerLowPassFilterEnabled = false;
+    }
+
+    ConfigureCtrl5(module, &ctrl5Config);
+
+    // Return the LSB divider.
+    switch (config->Range)
+    {
+        case QMI8658AccRange_2g:
+            return (1 << 14);
+
+        case QMI8658AccRange_4g:
+            return (1 << 13);
+
+        case QMI8658AccRange_8g:
+            return (1 << 12);
+
+        case QMI8658AccRange_16g:
+            return (1 << 11);
+
+        default:
+            config->Range = QMI8658AccRange_8g;
+            return (1 << 12);
+    }
+}
+
+// Returns the LSB divider based on data rate.
+static inline unsigned short ConfigureGyroscope(Qmi8658* module, Qmi8658GyroscopeConfig* config)
+{
+    ConfigureCtrl3(
+        module,
+        &(Ctrl3Values)
+        {
+            .SelfTest = config->SelfTestEnabled,
+            .FullScale = config->Range,
+            .OutputDataRate = config->Odr
+        });
+
+    Ctrl5Values ctrl5Config;
+    ReadCtrl5(module, &ctrl5Config);
+
+    if (config->LowPassFilterEnabled)
+    {
+        ctrl5Config.GyroscopeLowPassFilterMode = LowPassFilterMode3;
+        ctrl5Config.GyroscopeLowPassFilterEnabled = true;
+    }
+    else
+    {
+        ctrl5Config.GyroscopeLowPassFilterEnabled = false;
+    }
+
+    ConfigureCtrl5(module, &ctrl5Config);
+
+    // Return the LSB divider.
+    switch (config->Range)
+    {
+        case QMI8658GyrRange_16dps:
+            return 2048;
+            
+        case QMI8658GyrRange_32dps:
+            return 1024;
+            
+        case QMI8658GyrRange_64dps:
+            return 512;
+            
+        case QMI8658GyrRange_128dps:
+            return 256;
+            
+        case QMI8658GyrRange_256dps:
+            return 128;
+            
+        case QMI8658GyrRange_512dps:
+            return 64;
+            
+        case QMI8658GyrRange_1024dps:
+            return 32;
+
+        case QMI8658GyrRange_2048dps:
+            return 16;
+            
+        // case QMI8658GyrRange_4096dps:
+        //     module->Gyroscope.LsbDivider = 8;
+        //     break;
+
+        default:
+            config->Range = QMI8658GyrRange_512dps;
+            return 64;
+    }
+}
+
+static void ConfigureSensors(
+    Qmi8658* module,
+    Qmi8658AccelerometerConfig* accelConfig, 
+    Qmi8658GyroscopeConfig* gyroConfig,
+    MotionDevice* accelerometerOut,
+    MotionDevice* gyroscopeOut)
+{
+    unsigned int startupTimeUs = 0;
+    if (accelConfig->Enabled)
+    {
+        startupTimeUs += GetAccelTurnOnTimeMicros(accelConfig->Odr);
+
+        memcpy(
+            accelerometerOut, 
+            &(MotionDevice)
+            {
+                .Read = ReadAccelerometer,
+                .Module = module,
+                .LsbDivider = ConfigureAccelerometer(module, accelConfig)
+            }, 
+            sizeof(MotionDevice));
+    }
+
+    if (gyroConfig->Enabled)
+    {
+        startupTimeUs += GetGyroTurnOnTimeMicros(gyroConfig->Odr);
+
+        memcpy(
+            gyroscopeOut, 
+            &(MotionDevice)
+            {
+                .Read = ReadGyro,
+                .Module = module,
+                .LsbDivider = ConfigureGyroscope(module, gyroConfig)
+            }, 
+            sizeof(MotionDevice));
+    }
+
+    // Enable the selected sensors.
+    ConfigureCtrl7(
+        module, 
+        &(Ctrl7Values)
+        { 
+            .AttitudeEngineEnable = false,
+            .AccelerometerEnable = accelConfig->Enabled,
+            .GyroscopeEnable = gyroConfig->Enabled 
+        });
+
+    sleep_us(startupTimeUs);
+
+    module->AttitudeEngineEnabled = false;
+    memcpy(&module->AccelConfig, accelConfig, sizeof(Qmi8658AccelerometerConfig));
+    memcpy(&module->GyroConfig, gyroConfig, sizeof(Qmi8658GyroscopeConfig));
+}
+
+static void EnableWakeOnMotion(Qmi8658* module, void (*onWake)(void* payload), void* callbackPayload)
 {
     module->WakeOnMotionEnabled = true;
     module->Sleeping = true;
@@ -901,10 +1008,20 @@ void QMI8658_enableWakeOnMotion(Qmi8658* module, void (*onWake)(void* payload), 
     // 5. [Set Accelerometer enable bit in CTRL7]
 
     // 1. Disable sensors.
-    QMI8658_enableSensors(QMI8658_CTRL7_DISABLE_ALL);
+    ConfigureCtrl7(module, &(Ctrl7Values) { });
 
     // 2. Set accelerometer sample rate and scale.
-    QMI8658_config_acc(QMI8658AccRange_2g, QMI8658AccOdr_LowPower_21Hz, QMI8658Lpf_Disable, QMI8658St_Disable);
+    Qmi8658AccelerometerConfig accelConfig = 
+    {
+        .Enabled = true,
+        .Odr = QMI8658AccOdr_LowPower_3Hz, // Spec sheet only defines aODR = 15 in Table 8, "Operating Mode Transition Diagram"
+        // .Odr = QMI8658AccOdr_LowPower_21Hz, // it clearly works with 21 Hz too though.
+        .Range = QMI8658AccRange_2g,
+        .LowPassFilterEnabled = false,
+        .SelfTestEnabled = false
+    };
+
+    ConfigureAccelerometer(module, &accelConfig);
 
     // 3. Set wake on motion threshold (WoM Threshold: absolute value in mg (with 1mg/LSB resolution)).
     // Select interrupt, polarity, and blanking time.
@@ -921,7 +1038,7 @@ void QMI8658_enableWakeOnMotion(Qmi8658* module, void (*onWake)(void* payload), 
             (CalibrationRegisterData) 
             { 
                 .Register = QMI8658Register_Cal1_L,
-                .Value = (uint8_t)QMI8658WomThreshold_low
+                .Value = (uint8_t)QMI8658WomThreshold_high
             },
             (CalibrationRegisterData) 
             { 
@@ -935,19 +1052,20 @@ void QMI8658_enableWakeOnMotion(Qmi8658* module, void (*onWake)(void* payload), 
         .RegisterCount = 2
     };
 
-    RunCtrl9WriteCommand(QMI8658_Ctrl9_Cmd_WoM_Setting, &cal);
+    RunCtrl9WriteCommand(module, QMI8658_Ctrl9_Cmd_WoM_Setting, &cal);
     
-    QMI8658_enableSensors(QMI8658_CTRL7_ACC_ENABLE);
-    sleep_ms(100);
+    ConfigureCtrl7(module, &(Ctrl7Values) { .AccelerometerEnable = true });
+    sleep_us(GetAccelTurnOnTimeMicros(accelConfig.Odr));
+    // sleep_ms(100);
 
     WomEventPayload* payload = (WomEventPayload*)malloc(sizeof(WomEventPayload));
     payload->Module = module;
     payload->Callback = onWake;
     payload->CallbackPayload = callbackPayload;
-    AddInterrupt1Callback(CreateInterruptCallback(OnWomEvent, payload));
+    AddInterrupt1Callback(module, CreateInterruptCallback(module, OnWomEvent, payload));
 }
 
-void QMI8658_disableWakeOnMotion(Qmi8658* module)
+static void DisableWakeOnMotion(Qmi8658* module)
 {
     module->WakeOnMotionEnabled = false;
 
@@ -963,7 +1081,7 @@ void QMI8658_disableWakeOnMotion(Qmi8658* module)
     // WoM Threshold the host processor may proceed to
     // reconfigure the QMI8658C as normal, as in the case
     // following a reset event.
-    QMI8658_enableSensors(QMI8658_CTRL7_DISABLE_ALL);
+    ConfigureCtrl7(module, &(Ctrl7Values) { });
 
     CalibrationData cal = 
     {
@@ -971,241 +1089,18 @@ void QMI8658_disableWakeOnMotion(Qmi8658* module)
         .RegisterCount = 1
     };
 
-    RunCtrl9WriteCommand(QMI8658_Ctrl9_Cmd_WoM_Setting, &cal);
+    RunCtrl9WriteCommand(module, QMI8658_Ctrl9_Cmd_WoM_Setting, &cal);
     
-    // Reenable sensors.
-    QMI8658_setUpSensors();
-}
-
-void QMI8658_setUpSensors()
-{
-    QMI8658_write_reg(QMI8658Register_Ctrl1, CTRL1_SPI_AI_MASK | CTRL1_SPI_BE_MASK);
-    QMI8658_config.inputSelection = QMI8658_CONFIG_GYR_ENABLE;
-    // QMI8658_config.inputSelection = QMI8658_CONFIG_ACCGYR_ENABLE;
-    QMI8658_config.accRange = QMI8658AccRange_8g;
-    QMI8658_config.accOdr = QMI8658AccOdr_1000Hz;
-    QMI8658_config.gyrRange = QMI8658GyrRange_512dps; 
-    QMI8658_config.gyrOdr = QMI8658GyrOdr_1000Hz;
-    // QMI8658_config.magOdr = QMI8658MagOdr_125Hz;
-    // QMI8658_config.magDev = MagDev_AKM09918;
-    // QMI8658_config.aeOdr = QMI8658AeOdr_128Hz;
-
-    QMI8658_Config_apply(&QMI8658_config);
-}
-
-static inline void ConfigureAccelerometer(Qmi8658* module, Qmi8658AccelerometerConfig* config)
-{
-    switch (config->Range)
-    {
-        case QMI8658AccRange_2g:
-            module->Accelerometer.LsbDivider = (1 << 14);
-            break;
-        case QMI8658AccRange_4g:
-            module->Accelerometer.LsbDivider = (1 << 13);
-            break;
-        case QMI8658AccRange_8g:
-            module->Accelerometer.LsbDivider = (1 << 12);
-            break;
-        case QMI8658AccRange_16g:
-            module->Accelerometer.LsbDivider = (1 << 11);
-            break;
-        default:
-            config->Range = QMI8658AccRange_8g;
-            module->Accelerometer.LsbDivider = (1 << 12);
-    }
-
-    ConfigureCtrl2(
+    // Reset accelerometer to previous configuration and reenable sensors.
+    ConfigureAccelerometer(module, &module->AccelConfig);
+    ConfigureCtrl7(
         module, 
-        &(Ctrl2Values)
-        {
-            .SelfTest = config->SelfTestEnabled,
-            .FullScale = config->Range,
-            .OutputDataRate = config->Odr
+        &(Ctrl7Values)
+        { 
+            .AttitudeEngineEnable = module->AttitudeEngineEnabled,
+            .AccelerometerEnable = module->AccelConfig.Enabled,
+            .GyroscopeEnable = module->GyroConfig.Enabled 
         });
-
-    // #define ACC_CONFIG_SELF_TEST_ENABLE 0b10000000
-
-    // WriteSingle(
-    //     module,
-    //     QMI8658Register_Ctrl2, 
-    //     config->SelfTestEnabled
-    //         ? (uint8_t)config->Range | (uint8_t)config->Odr | ACC_CONFIG_SELF_TEST_ENABLE
-    //         : (uint8_t)config->Range | (uint8_t)config->Odr);
-
-    // uint8_t ctrl5Config = 0;
-    // ReadBytes(module, QMI8658Register_Ctrl5, &ctrl5Config, 1);
-
-    Ctrl5Values ctrl5Config;
-    ReadCtrl5(module, &ctrl5Config);
-
-    if (config->LowPassFilterEnabled)
-    {
-        ctrl5Config.AccelerometerLowPassFilterMode = LowPassFilterMode3;
-        ctrl5Config.AccelerometerLowPassFilterEnabled = true;
-    }
-    else
-    {
-        ctrl5Config.AccelerometerLowPassFilterEnabled = false;
-    }
-
-    ConfigureCtrl5(module, &ctrl5Config);
-}
-
-static inline void ConfigureGyroscope(Qmi8658* module, Qmi8658GyroscopeConfig* config)
-{
-    // Store the scale factor for use when processing raw data
-    switch (config->Range)
-    {
-        case QMI8658GyrRange_16dps:
-            module->Gyroscope.LsbDivider = 2048;
-            break;
-        case QMI8658GyrRange_32dps:
-            module->Gyroscope.LsbDivider = 1024;
-            break;
-        case QMI8658GyrRange_64dps:
-            module->Gyroscope.LsbDivider = 512;
-            break;
-        case QMI8658GyrRange_128dps:
-            module->Gyroscope.LsbDivider = 256;
-            break;
-        case QMI8658GyrRange_256dps:
-            module->Gyroscope.LsbDivider = 128;
-            break;
-        case QMI8658GyrRange_512dps:
-            module->Gyroscope.LsbDivider = 64;
-            break;
-        case QMI8658GyrRange_1024dps:
-            module->Gyroscope.LsbDivider = 32;
-            break;
-        case QMI8658GyrRange_2048dps:
-            module->Gyroscope.LsbDivider = 16;
-            break;
-        // case QMI8658GyrRange_4096dps:
-        //     module->Gyroscope.LsbDivider = 8;
-        //     break;
-        default:
-            config->Range = QMI8658GyrRange_512dps;
-            module->Gyroscope.LsbDivider = 64;
-            break;
-    }
-
-    ConfigureCtrl3(
-        module,
-        &(Ctrl3Values)
-        {
-            .SelfTest = config->SelfTestEnabled,
-            .FullScale = config->Range,
-            .OutputDataRate = config->Odr
-        });
-
-    // #define GYRO_CONFIG_SELF_TEST_ENABLE 0b10000000
-
-    // WriteSingle(
-    //     module, 
-    //     QMI8658Register_Ctrl3, 
-    //     config->SelfTestEnabled
-    //         ? (uint8_t)config->Range | (uint8_t)config->Odr | GYRO_CONFIG_SELF_TEST_ENABLE
-    //         : (uint8_t)config->Range | (uint8_t)config->Odr);
-
-    uint8_t ctrl5Config = 0;
-    ReadBytes(module, QMI8658Register_Ctrl5, &ctrl5Config, 1);
-
-    #define CTRL5_GYRO_LPF_ENABLE 0b00010000
-    if (config->LowPassFilterEnabled)
-    {
-        ctrl5Config |= G_LSP_MODE_3;
-        ctrl5Config |= CTRL5_GYRO_LPF_ENABLE_MASK;
-    }
-    else
-    {
-        ctrl5Config &= ~0x10;
-    }
-
-    WriteSingle(module, QMI8658Register_Ctrl5, ctrl5Config);
-}
-
-static void ConfigureSensors(
-    Qmi8658* module,
-    bool enableAttitudeEngine, 
-    Qmi8658AccelerometerConfig* accelConfig, 
-    Qmi8658GyroscopeConfig* gyroConfig)
-{
-    ConfigureCtrl1(
-        module,
-        &(Ctrl1Values)
-        {
-            .SerialAutoincrement = true,
-            .ReadBigEndian = true
-        });
-    // WriteSingle(module, QMI8658Register_Ctrl1, CTRL1_SPI_AI_MASK | CTRL1_SPI_BE_MASK); 
-
-    // QMI8658_config_acc(QMI8658_config.accRange, QMI8658_config.accOdr, QMI8658Lpf_Enable, QMI8658St_Disable);
-    // QMI8658_config_gyro(QMI8658_config.gyrRange, QMI8658_config.gyrOdr, QMI8658Lpf_Enable, QMI8658St_Disable);
-    // QMI8658_config_mag(QMI8658_config.magDev, QMI8658_config.magOdr);
-
-    // QMI8658_config.aeOdr = QMI8658AeOdr_128Hz;
-    // QMI8658_write_reg(QMI8658Register_Ctrl6, odr);
-
-    uint8_t ctrl7Enables = enableAttitudeEngine ? QMI8658_CTRL7_AE_ENABLE : 0;
-    if (accelConfig && accelConfig->Enabled)
-    {
-        ctrl7Enables |= QMI8658_CONFIG_ACC_ENABLE;
-        ConfigureAccelerometer(module, accelConfig);
-        memcpy(&module->AccelConfig, accelConfig, sizeof(Qmi8658AccelerometerConfig));
-    }
-
-    if (gyroConfig && gyroConfig->Enabled)
-    {
-        ctrl7Enables |= QMI8658_CONFIG_GYR_ENABLE;
-        ConfigureGyroscope(module, gyroConfig);
-        memcpy(&module->GyroConfig, gyroConfig, sizeof(Qmi8658GyroscopeConfig));
-    }
-
-    // Enable the selected sensors.
-    WriteSingle(module, QMI8658Register_Ctrl7, ctrl7Enables);
-}
-
-void QMI8658_enableSensors(unsigned char enableFlags)
-{
-    if (enableFlags & QMI8658_CONFIG_AE_ENABLE)
-    {
-        enableFlags |= QMI8658_CTRL7_ACC_ENABLE | QMI8658_CTRL7_GYR_ENABLE;
-    }
-
-    QMI8658_write_reg(QMI8658Register_Ctrl7, enableFlags & QMI8658_CTRL7_ENABLE_MASK);
-}
-
-void QMI8658_Config_apply(struct QMI8658Config const *config)
-{
-    unsigned char fisSensors = config->inputSelection;
-
-    if (fisSensors & QMI8658_CONFIG_AE_ENABLE)
-    {
-        QMI8658_config_ae(config->aeOdr);
-    }
-    else
-    {
-        if (config->inputSelection & QMI8658_CONFIG_ACC_ENABLE)
-        {
-            QMI8658_config_acc(config->accRange, config->accOdr, QMI8658Lpf_Enable, QMI8658St_Disable);
-        }
-        if (config->inputSelection & QMI8658_CONFIG_GYR_ENABLE)
-        {
-            QMI8658_config_gyro(config->gyrRange, config->gyrOdr, QMI8658Lpf_Enable, QMI8658St_Disable);
-        }
-    }
-
-    if (config->inputSelection & QMI8658_CONFIG_MAG_ENABLE)
-    {
-        QMI8658_config_mag(config->magDev, config->magOdr);
-    }
-    QMI8658_enableSensors(fisSensors);
-}
-
-unsigned char QMI8658_reset(void)
-{
-    QMI8658_write_reg(QMI8658_Reset, 0x01);
-    sleep_ms(SYSTEM_TURN_ON_TIME_MILLIS);
 }
 
 static void Reset(Qmi8658* module)
@@ -1214,16 +1109,16 @@ static void Reset(Qmi8658* module)
     sleep_ms(SYSTEM_TURN_ON_TIME_MILLIS);
 }
 
-void QMI8658_powerDown(void)
+static void PowerDown(Qmi8658* module)
 {
     // CTRL1 sensorDisable = 1
     // CTRL7 aEN = 0, gEN = 0, mEN = 0, sEN=0. 
 
     // Disable sensors.
-    QMI8658_write_reg(QMI8658Register_Ctrl1, CTRL1_SENSOR_DISABLE_MASK);
+    ConfigureCtrl1(module, &(Ctrl1Values){ .DisableSensors = true });
 
     // Enter standby mode for all sensors.
-    QMI8658_write_reg(QMI8658Register_Ctrl1, 0);
+    ConfigureCtrl7(module, &(Ctrl7Values){ });
     sleep_ms(SYSTEM_TURN_ON_TIME_MILLIS);
 }
 
@@ -1244,7 +1139,7 @@ static inline bool InitI2c(i2c_inst_t* i2cInstance, Qmi8658* module)
         IMU_INT1_GPIO_PIN, 
         GPIO_IRQ_EDGE_RISE | GPIO_IRQ_EDGE_FALL, 
         true, 
-        OnInterrupt1);
+        OnGpioInterrupt1Received);
 
     unsigned char QMI8658_chip_id = 0x00;
     unsigned char QMI8658_slave[2] = { QMI8658_SLAVE_ADDR_L, QMI8658_SLAVE_ADDR_H };
@@ -1268,6 +1163,15 @@ static inline bool InitI2c(i2c_inst_t* i2cInstance, Qmi8658* module)
     }
 
     ReadBytes(module, QMI8658Register_Revision, &module->ChipRevisionId, 1);
+
+    ConfigureCtrl1(
+        module,
+        &(Ctrl1Values)
+        {
+            .SerialAutoincrement = true,
+            .ReadBigEndian = true
+        });
+
     return QMI8658_chip_id == 0x05;
 }
 
@@ -1277,21 +1181,29 @@ void Qmi8658_Init(i2c_inst_t* i2cInstance, Qmi8658* out)
     {
         .Reset = Reset,
         .ConfigureSensors = ConfigureSensors,
-        .Accelerometer = 
-        {
-            .Read = ReadAccelerometer,
-            .Module = out
-        },
-        .Gyroscope = 
-        {
-            .Read = ReadGyro,
-            .Module = out
-        },
+        .EnableWakeOnMotion = EnableWakeOnMotion,
+        .DisableWakeOnMotion = DisableWakeOnMotion,
+        // .ReadCombined = ReadCombined,
+        .PowerDown = PowerDown,
+        // .Accelerometer = 
+        // {
+        //     .Read = ReadAccelerometer,
+        //     .Module = out
+        // },
+        // .Gyroscope = 
+        // {
+        //     .Read = ReadGyro,
+        //     .Module = out
+        // },
         .Sleeping = false,
         .WakeOnMotionEnabled = false,
         .I2cInstance = i2cInstance
     };
 
     InitI2c(i2cInstance, &module);
+
+    gpioInterruptCallback.Module = out;
+    gpioInterruptCallback.OnInterruptReceived = OnInterrupt1;
+
     memcpy(out, &module, sizeof(Qmi8658));
 }

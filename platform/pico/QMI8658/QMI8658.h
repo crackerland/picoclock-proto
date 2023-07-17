@@ -557,32 +557,61 @@ typedef struct
 }
 Qmi8658GyroscopeConfig;
 
+struct InterruptCallback;
+struct Qmi8658;
+typedef void (*InterruptCallbackHandler)(struct InterruptCallback* callback, uint8_t status);
+
+typedef struct InterruptCallback
+{
+    InterruptCallbackHandler OnInterruptReceived;
+    void* Payload;
+    struct InterruptCallback* Next;
+    struct Qmi8658* Module;
+}
+InterruptCallback;
+
 typedef struct Qmi8658
 {
+    void (*PowerDown)(struct Qmi8658*);
     void (*Reset)(struct Qmi8658*);
     void (*ConfigureSensors)(
         struct Qmi8658*,
-        bool enableAttitudeEngine,
         Qmi8658AccelerometerConfig* accelConfig, 
-        Qmi8658GyroscopeConfig* gyroConfig);
+        Qmi8658GyroscopeConfig* gyroConfig,
+        MotionDevice* accelerometerOut,
+        MotionDevice* gyroscopeOut);
 
-    MotionDevice Accelerometer;
-    MotionDevice Gyroscope;
+    void (*ConfigureAttitudeEngine)(
+        struct Qmi8658*,
+        bool enableMotionOnDemand,
+        MotionDevice* attitudeEngineOut);
+
+    // void (*ReadCombined)(
+    //     struct Qmi8658*,
+    //     QMI8658_MotionCoordinates* acc, 
+    //     QMI8658_MotionCoordinates* gyro);
+
+    void (*EnableWakeOnMotion)(struct Qmi8658*, void (*onWake)(void* payload), void* callbackPayload);
+    void (*DisableWakeOnMotion)(struct Qmi8658*);
+    // MotionDevice Accelerometer;
+    // MotionDevice Gyroscope;
     bool Sleeping;
     bool WakeOnMotionEnabled;
     i2c_inst_t* I2cInstance;
     uint8_t ModuleSlaveAddress;
     uint8_t ChipRevisionId;
+    bool AttitudeEngineEnabled;
     Qmi8658AccelerometerConfig AccelConfig;
     Qmi8658GyroscopeConfig GyroConfig;
+    InterruptCallback* Interrupt1Callbacks;
 }
 Qmi8658;
 
 extern void Qmi8658_Init(i2c_inst_t* i2cInstance, Qmi8658* out);
 
-extern unsigned char QMI8658_write_reg(unsigned char reg, unsigned char value);
-extern unsigned char QMI8658_read_reg(unsigned char reg, unsigned char *buf, unsigned short len);
-extern unsigned char QMI8658_reset(void);
+// extern unsigned char QMI8658_write_reg(unsigned char reg, unsigned char value);
+// extern unsigned char QMI8658_read_reg(unsigned char reg, unsigned char *buf, unsigned short len);
+// extern unsigned char QMI8658_reset(void);
 
 // All QMI8658C functional blocks are switched off to
 // minimize power consumption. Digital interfaces remain on
@@ -591,29 +620,20 @@ extern unsigned char QMI8658_reset(void);
 // values are maintained. The current in this mode is typically
 // 20 µA. The host must initiate this mode by setting
 // sensorDisable=1.
-extern void QMI8658_powerDown(void);
+// extern void QMI8658_powerDown(void);
 
-extern void QMI8658_setUpSensors();
-extern void QMI8658_Config_apply(struct QMI8658Config const *config);
-extern void QMI8658_enableSensors(unsigned char enableFlags);
-extern unsigned int QMI8658_read_timestamp();
-// extern void QMI8658_read_acc_xyz(QMI8658_MotionCoordinates* acc);
-// extern void QMI8658_read_gyro_xyz(QMI8658_MotionCoordinates* acc);
-// extern void QMI8658_read_xyz(QMI8658_MotionCoordinates* acc, QMI8658_MotionCoordinates* gyro);
-// extern void QMI8658_read_xyz_raw(short raw_acc_xyz[3], short raw_gyro_xyz[3]);
-extern void QMI8658_read_ae(float quat[4], float velocity[3]);
-extern void QMI8658_read_mag(float mag[3]);
-extern unsigned char QMI8658_readStatus0(void);
-extern unsigned char QMI8658_readStatus1(void);
-extern float QMI8658_readTemp(void);
-extern void QMI8658_enableWakeOnMotion(Qmi8658* module, void (*onWake)(void* payload), void* callbackPayload);
-extern void QMI8658_disableWakeOnMotion(Qmi8658* module);
+// extern unsigned int QMI8658_read_timestamp();
+// extern void QMI8658_read_ae(float quat[4], float velocity[3]);
+// extern void QMI8658_read_mag(float mag[3]);
+// extern unsigned char QMI8658_readStatus0(void);
+// extern unsigned char QMI8658_readStatus1(void);
+// extern float QMI8658_readTemp(void);
 
-void DEV_I2C_Write_Byte(uint8_t addr, uint8_t reg, uint8_t Value);
-void DEV_I2C_Write_Register(uint8_t addr, uint8_t reg, uint16_t value);
-void DEV_I2C_Write_nByte(uint8_t addr, uint8_t *pData, uint32_t Len);
-uint8_t DEV_I2C_Read_Byte(uint8_t addr, uint8_t reg);
-void DEV_I2C_Read_Register(uint8_t addr, uint8_t reg, uint16_t *value);
-void DEV_I2C_Read_nByte(uint8_t addr, uint8_t reg, uint8_t *pData, uint32_t Len);
+// void DEV_I2C_Write_Byte(uint8_t addr, uint8_t reg, uint8_t Value);
+// void DEV_I2C_Write_Register(uint8_t addr, uint8_t reg, uint16_t value);
+// void DEV_I2C_Write_nByte(uint8_t addr, uint8_t *pData, uint32_t Len);
+// uint8_t DEV_I2C_Read_Byte(uint8_t addr, uint8_t reg);
+// void DEV_I2C_Read_Register(uint8_t addr, uint8_t reg, uint16_t *value);
+// void DEV_I2C_Read_nByte(uint8_t addr, uint8_t reg, uint8_t *pData, uint32_t Len);
 
 #endif
