@@ -101,19 +101,24 @@ static void Update(PicoPowerManager* powerManager)
     //     powerManager->Gyro.Y, 
     //     powerManager->Gyro.Z);
 
-    QMI8658_MotionCoordinates motion;
-    (*powerManager->MotionDevice->Read)(powerManager->MotionDevice, &motion);
+    Qmi8658_MotionVector vector;
+    Qmi8658_Quaternion quaternion;
+    (*powerManager->MotionDevice->Read)(powerManager->MotionDevice, &vector, &quaternion);
 
     printf(
-        "Motion (%f, %f, %f)\n", 
-        motion.X, 
-        motion.Y, 
-        motion.Z);
+        "Vector (%f, %f, %f) Quaternion (%f, %f, %f, %f)\n", 
+        vector.X, 
+        vector.Y, 
+        vector.Z,
+        quaternion.W,
+        quaternion.X,
+        quaternion.Y,
+        quaternion.Z);
 
 #define GYRMAX 300.0f
 // #define ACCMAX 500.0f
 
-    if (motion.X > GYRMAX || motion.X < -GYRMAX) 
+    if (vector.X > GYRMAX || vector.X < -GYRMAX) 
     {
         (*powerManager->OnMotion)(powerManager);
     }

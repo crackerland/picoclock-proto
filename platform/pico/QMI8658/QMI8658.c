@@ -188,42 +188,19 @@ typedef struct
 }
 Ctrl7Values;
 
-enum
-{
-    AXIS_X = 0,
-    AXIS_Y = 1,
-    AXIS_Z = 2,
-
-    AXIS_TOTAL
-};
-
-typedef struct
-{
-    short sign[AXIS_TOTAL];
-    unsigned short map[AXIS_TOTAL];
-} qst_imu_layout;
-
-typedef struct 
+typedef struct Ctrl9CalibrationRegisterData 
 {
     enum QMI8658Register Register;
     uint8_t Value;
 }
-CalibrationRegisterData;
+Ctrl9CalibrationRegisterData;
 
-typedef struct  
+typedef struct Ctrl9CalibrationData  
 {
-    CalibrationRegisterData Registers[8];
+    Ctrl9CalibrationRegisterData Registers[8];
     unsigned int RegisterCount;
 }
-CalibrationData;
-
-static unsigned short acc_lsb_div = 0;
-static unsigned short gyro_lsb_div = 0;
-static unsigned short ae_q_lsb_div = (1 << 14);
-static unsigned short ae_v_lsb_div = (1 << 10);
-static unsigned int imu_timestamp = 0;
-static struct QMI8658Config QMI8658_config;
-static unsigned char QMI8658_slave_addr = QMI8658_SLAVE_ADDR_L;
+Ctrl9CalibrationData;
 
 typedef enum 
 {
@@ -556,6 +533,54 @@ static void ConfigureCtrl7(Qmi8658* module, Ctrl7Values* config)
             | (config->AccelerometerEnable ? CTRL7_A_EN_MASK : 0));
 }
 
+// sDA
+#define STATUS0_S_DA_MASK 0b00001000
+
+// mDA
+#define STATUS0_M_DA_MASK 0b00000100
+
+// gDA
+#define STATUS0_G_DA_MASK 0b00000010
+
+// aDA
+#define STATUS0_A_DA_MASK 0b00000001
+
+static void ReadStatus0(Qmi8658* module, Status0Values* out)
+{    
+    uint8_t value = 0;
+    ReadBytes(module, QMI8658Register_Status0, &value, 1);
+
+    Status0Values values = 
+    {
+        .AttitudeEngineDataAvailable = !!(value & STATUS0_S_DA_MASK),
+        .MagnetometerDataAvailable = !!(value & STATUS0_M_DA_MASK),
+        .GyroscopeDataAvailable = !!(value & STATUS0_G_DA_MASK),
+        .AccelerometerDataAvailable = (value & STATUS0_A_DA_MASK)
+    };
+
+    memcpy(out, &values, sizeof(Status0Values));
+}
+
+// CmdDone
+#define STATUS1_CMD_DONE_MASK 0b00000001
+
+// (reserved/WoM - See 9.3) Wake on motion event
+#define STATUS1_WOM_EVENT_MASK 0b00000100
+
+static uint8_t ReadStatus1(Qmi8658* module, Status1Values* out)
+{
+    uint8_t value = 0;
+    ReadBytes(module, QMI8658Register_Status1, &value, 1);
+
+    Status1Values values = 
+    {
+        .WakeOnMotionEvent = !!(value & STATUS1_WOM_EVENT_MASK),
+        .Ctrl9CommandDone = !!(value & STATUS1_CMD_DONE_MASK),
+    };
+
+    memcpy(out, &values, sizeof(Status1Values));
+}
+
 typedef struct GpioInterruptCallback
 {
     void (*OnInterruptReceived)(Qmi8658* module);
@@ -563,7 +588,8 @@ typedef struct GpioInterruptCallback
 }
 GpioInterruptCallback;
 
-GpioInterruptCallback gpioInterruptCallback;
+GpioInterruptCallback gpioInterrupt1Callback;
+GpioInterruptCallback gpioInterrupt2Callback;
 
 static InterruptCallback* CreateInterruptCallback(Qmi8658* module, InterruptCallbackHandler onInterruptReceived, void* payload)
 {
@@ -597,7 +623,25 @@ static void AddInterrupt1Callback(Qmi8658* module, InterruptCallback* callback)
     }
 }
 
-static void RemoveInterruptCallback(Qmi8658* module, InterruptCallback* callback)
+static void AddInterrupt2Callback(Qmi8658* module, InterruptCallback* callback)
+{
+    InterruptCallback* next = module->Interrupt2Callbacks;
+    if (!next)
+    {
+        module->Interrupt2Callbacks = callback;
+    }
+    else
+    {
+        while (next->Next)
+        {
+            next = next->Next;
+        }
+
+        next->Next = callback;
+    }
+}
+
+static void RemoveInterrupt1Callback(Qmi8658* module, InterruptCallback* callback)
 {
     if (module->Interrupt1Callbacks == callback)
     {
@@ -617,76 +661,124 @@ static void RemoveInterruptCallback(Qmi8658* module, InterruptCallback* callback
     }
 }
 
+static void RemoveInterrupt2Callback(Qmi8658* module, InterruptCallback* callback)
+{
+    if (module->Interrupt2Callbacks == callback)
+    {
+        module->Interrupt2Callbacks = callback->Next; 
+    }
+    else
+    {
+        InterruptCallback* next = module->Interrupt2Callbacks;
+        while (next)
+        {
+            if (next->Next == callback)
+            {
+                next->Next = callback->Next;
+                break;
+            }
+        }
+    }
+}
+
 static void OnInterrupt1(Qmi8658* module)
 {
+    if (!module->Interrupt1Callbacks)
+    {
+        return;
+    }
+
     // Acknowledge interrupt and reset the status by reading.
-    uint8_t status;
-    ReadBytes(module, QMI8658Register_Status1, &status, 1);
+    Status0Values status0;
+    ReadStatus0(module, &status0);
+
+    Status1Values status1;
+    ReadStatus1(module, &status1);
 
     InterruptCallback* next = module->Interrupt1Callbacks;
     while (next)
     {
         InterruptCallback* nextNext = next->Next;
-        (*next->OnInterruptReceived)(next, status);
+        (*next->OnInterruptReceived)(next, &status0, &status1);
+        next = nextNext;
+    }
+}
+
+static void OnInterrupt2(Qmi8658* module)
+{
+    if (!module->Interrupt2Callbacks)
+    {
+        return;
+    }
+
+    // Acknowledge interrupt and reset the status by reading.
+    Status0Values status0;
+    ReadStatus0(module, &status0);
+
+    Status1Values status1;
+    ReadStatus1(module, &status1);
+
+    InterruptCallback* next = module->Interrupt2Callbacks;
+    while (next)
+    {
+        InterruptCallback* nextNext = next->Next;
+        (*next->OnInterruptReceived)(next, &status0, &status1);
         next = nextNext;
     }
 }
 
 static void OnGpioInterrupt1Received(uint gpio, uint32_t eventMask)
 {
-    if (gpio != IMU_INT1_GPIO_PIN)
-    {
-        // Not sure where this came from.
-        return;
-    }
-
     gpio_acknowledge_irq(gpio, eventMask);
-    (*gpioInterruptCallback.OnInterruptReceived)(gpioInterruptCallback.Module);
+    (*gpioInterrupt1Callback.OnInterruptReceived)(gpioInterrupt1Callback.Module);
 }
 
-static void OnCtrl9CommandExecuted(InterruptCallback* callback, uint8_t status)
+static void OnGpioInterrupt2Received(uint gpio, uint32_t eventMask)
 {
+    gpio_acknowledge_irq(gpio, eventMask);
+    (*gpioInterrupt2Callback.OnInterruptReceived)(gpioInterrupt2Callback.Module);
+}
+
+static void OnCtrl9CommandExecuted(InterruptCallback* callback, Status0Values* status0, Status1Values* status1)
+{
+    // TODO: The interrupt is firing but the status bit isn't set
     // if (!(status & QMI8658_STATUS1_CTRL9_CMD_DONE))
     // {
     //     return;
     // }
 
-    *((bool*)callback->Payload) = false;
-    RemoveInterruptCallback(callback->Module, callback);
-}
-
-static void OnWomEvent(InterruptCallback* callback, uint8_t status)
-{
-    if (!(status & QMI8658_STATUS1_WAKEUP_EVENT))
+    if (!status1->Ctrl9CommandDone)
     {
         return;
     }
 
-    WomEventPayload* payload = (WomEventPayload*)callback->Payload;
-    payload->Module->Sleeping = false;
-    if (payload->Callback)
-    {
-        (*payload->Callback)(payload->CallbackPayload);
-    }
-    
-    RemoveInterruptCallback(callback->Module, callback);
-    free(payload);
+    *((bool*)callback->Payload) = false;
+    RemoveInterrupt1Callback(callback->Module, callback);
 }
 
-// void QMI8658_config_mag(enum QMI8658_MagDev device, enum QMI8658_MagOdr odr)
-// {
-//     QMI8658_write_reg(QMI8658Register_Ctrl4, device | odr);
-// }
+static void RunCtrl9ReadCommand(Qmi8658* module, enum QMI8658_Ctrl9Command command)
+{
+    bool waiting = true;
+    AddInterrupt1Callback(module, CreateInterruptCallback(module, OnCtrl9CommandExecuted, &waiting));
 
-// void QMI8658_config_ae(enum QMI8658_AeOdr odr)
-// {
-//     // QMI8658_config_acc(QMI8658AccRange_8g, AccOdr_1000Hz, Lpf_Enable, St_Enable);
-//     // QMI8658_config_gyro(QMI8658GyrRange_2048dps, GyrOdr_1000Hz, Lpf_Enable, St_Enable);
-//     QMI8658_config_acc(QMI8658_config.accRange, QMI8658_config.accOdr, QMI8658Lpf_Enable, QMI8658St_Disable);
-//     QMI8658_config_gyro(QMI8658_config.gyrRange, QMI8658_config.gyrOdr, QMI8658Lpf_Enable, QMI8658St_Disable);
-//     QMI8658_config_mag(QMI8658_config.magDev, QMI8658_config.magOdr);
-//     QMI8658_write_reg(QMI8658Register_Ctrl6, odr);
-// }
+    WriteSingle(module, QMI8658Register_Ctrl9, command);
+
+    while (waiting)
+    {
+        tight_loop_contents(); // NO OP
+    }
+}
+
+static void RunCtrl9WriteCommand(Qmi8658* module, enum QMI8658_Ctrl9Command command, Ctrl9CalibrationData* registers)
+{
+    for (unsigned int i = 0; i < registers->RegisterCount; i++)
+    {
+        Ctrl9CalibrationRegisterData* data = &registers->Registers[i];
+        WriteSingle(module, data->Register, data->Value);
+    }
+
+    RunCtrl9ReadCommand(module, command);
+}
 
 // float QMI8658_readTemp(void)
 // {
@@ -720,30 +812,97 @@ static void OnWomEvent(InterruptCallback* callback, uint8_t status)
 
 static inline float ReadAccAxis(MotionDevice* device, short lo, short hi)
 {
-    return (float)(((short)((unsigned short)(hi << 8) | lo)) * 1000.0f) / device->LsbDivider;
+    return (float)(((short)((unsigned short)(hi << 8) | lo)) * 1000.0f) / device->VectorLsbDivider;
 }
 
 static inline float ReadGyroAxis(MotionDevice* device, short lo, short hi)
 {
-    return (float)(((short)((unsigned short)(hi << 8) | lo)) * 1.0f) / device->LsbDivider;
+    return (float)(((short)((unsigned short)(hi << 8) | lo)) * 1.0f) / device->VectorLsbDivider;
 }
 
-static void ReadAccelerometer(MotionDevice* device, QMI8658_MotionCoordinates* acc)
+static void ReadAccelerometer(MotionDevice* device, Qmi8658_MotionVector* vectorOut, Qmi8658_Quaternion* quaternionOut)
 {
     unsigned char registersBuffer[6] = { };
     ReadBytes(device->Module, QMI8658Register_Ax_L, registersBuffer, 6);
-    acc->X = ReadAccAxis(device, registersBuffer[0], registersBuffer[1]);
-    acc->Y = ReadAccAxis(device, registersBuffer[2], registersBuffer[3]);
-    acc->Z = ReadAccAxis(device, registersBuffer[4], registersBuffer[5]);
+    vectorOut->X = ReadAccAxis(device, registersBuffer[0], registersBuffer[1]);
+    vectorOut->Y = ReadAccAxis(device, registersBuffer[2], registersBuffer[3]);
+    vectorOut->Z = ReadAccAxis(device, registersBuffer[4], registersBuffer[5]);
+    memset(quaternionOut, 0, sizeof(Qmi8658_Quaternion));
 }
 
-static void ReadGyro(MotionDevice* device, QMI8658_MotionCoordinates* gyro)
+static void ReadGyro(MotionDevice* device, Qmi8658_MotionVector* vectorOut, Qmi8658_Quaternion* quaternionOut)
 {
     uint8_t registersBuffer[6] = { };
-    ReadBytes(device->Module, QMI8658Register_Gx_L, registersBuffer, 6); // 0x1f, 31
-    gyro->X = ReadGyroAxis(device, registersBuffer[0], registersBuffer[1]);
-    gyro->Y = ReadGyroAxis(device, registersBuffer[2], registersBuffer[3]);
-    gyro->Z = ReadGyroAxis(device, registersBuffer[4], registersBuffer[5]);
+    ReadBytes(device->Module, QMI8658Register_Gx_L, registersBuffer, 6);
+    vectorOut->X = ReadGyroAxis(device, registersBuffer[0], registersBuffer[1]);
+    vectorOut->Y = ReadGyroAxis(device, registersBuffer[2], registersBuffer[3]);
+    vectorOut->Z = ReadGyroAxis(device, registersBuffer[4], registersBuffer[5]);
+    memset(quaternionOut, 0, sizeof(Qmi8658_Quaternion));
+}
+
+static void OnAeDataAvailable(InterruptCallback* callback, Status0Values* status0, Status1Values* status1)
+{
+    if (!status0->AttitudeEngineDataAvailable)
+    {
+        return;
+    }
+
+    *((bool*)callback->Payload) = false;
+    RemoveInterrupt2Callback(callback->Module, callback);
+}
+
+static inline void QueryMotionOnDemand(Qmi8658* module) 
+{
+    // (5.8.5 CTRL9 Commands in Detail)
+    // ...
+    // The CTRL_CMD_REQ_MoD command is then issued by
+    // writing 0x0C to CTRL9 register 0x0A. This indicates to
+    // the QMI8658C that it is required to supply the motion data
+    // to the host. The device immediately makes available the
+    // orientation and velocity increments it has computed so far
+    // to the host by making them available at output registers
+    // 0x25 to 0x3D and raises the INT1 to indicate to the host
+    // that valid data is available.
+
+    bool waiting = true;
+    // 6.1.2: AE Mode In AE Mode, INT2 is asserted when data is available.
+    AddInterrupt2Callback(module, CreateInterruptCallback(module, OnAeDataAvailable, &waiting));
+    WriteSingle(module, QMI8658Register_Ctrl9, QMI8658_Ctrl9_Cmd_Rqst_Sdi_Mod);
+
+    while (waiting)
+    {
+        tight_loop_contents();
+    }
+    // sleep_ms(100);
+}
+
+static void ReadAttitudeEngine(MotionDevice* device, Qmi8658_MotionVector* velocityOut, Qmi8658_Quaternion* quaternionOut)
+{
+    QueryMotionOnDemand(device->Module);
+
+    uint8_t registersBuffer[14] = { };
+    ReadBytes(device->Module, QMI8658Register_Q1_L, registersBuffer, sizeof(registersBuffer));
+
+    short raw_q_xyz[4];
+    short raw_v_xyz[3];
+
+    raw_q_xyz[0] = (short)((unsigned short)(registersBuffer[1] << 8) | (registersBuffer[0]));
+    raw_q_xyz[1] = (short)((unsigned short)(registersBuffer[3] << 8) | (registersBuffer[2]));
+    raw_q_xyz[2] = (short)((unsigned short)(registersBuffer[5] << 8) | (registersBuffer[4]));
+    raw_q_xyz[3] = (short)((unsigned short)(registersBuffer[7] << 8) | (registersBuffer[6]));
+
+    raw_v_xyz[1] = (short)((unsigned short)(registersBuffer[9] << 8) | (registersBuffer[8]));
+    raw_v_xyz[2] = (short)((unsigned short)(registersBuffer[11] << 8) | (registersBuffer[10]));
+    raw_v_xyz[2] = (short)((unsigned short)(registersBuffer[13] << 8) | (registersBuffer[12]));
+
+    quaternionOut->W = (float)(raw_q_xyz[0] * 1.0f) / device->QuaternionLsbDivider;
+    quaternionOut->X = (float)(raw_q_xyz[1] * 1.0f) / device->QuaternionLsbDivider;
+    quaternionOut->Y = (float)(raw_q_xyz[2] * 1.0f) / device->QuaternionLsbDivider;
+    quaternionOut->Z = (float)(raw_q_xyz[3] * 1.0f) / device->QuaternionLsbDivider;
+
+    velocityOut->X = (float)(raw_v_xyz[0] * 1.0f) / device->VectorLsbDivider;
+    velocityOut->Y = (float)(raw_v_xyz[1] * 1.0f) / device->VectorLsbDivider;
+    velocityOut->Z = (float)(raw_v_xyz[2] * 1.0f) / device->VectorLsbDivider;
 }
 
 // static void ReadCombined(Qmi8658* module, QMI8658_MotionCoordinates* acc, QMI8658_MotionCoordinates* gyro)
@@ -760,68 +919,6 @@ static void ReadGyro(MotionDevice* device, QMI8658_MotionCoordinates* gyro)
 //     gyro->Y = ReadGyroAxis(&module->Gyroscope, registersBuffer[8], registersBuffer[9]);
 //     gyro->Z = ReadGyroAxis(&module->Gyroscope, registersBuffer[10], registersBuffer[11]);
 // }
-
-// void QMI8658_read_ae(float quat[4], float velocity[3])
-// {
-//     unsigned char buf_reg[14];
-//     short raw_q_xyz[4];
-//     short raw_v_xyz[3];
-
-//     QMI8658_read_reg(QMI8658Register_Q1_L, buf_reg, 14);
-//     raw_q_xyz[0] = (short)((unsigned short)(buf_reg[1] << 8) | (buf_reg[0]));
-//     raw_q_xyz[1] = (short)((unsigned short)(buf_reg[3] << 8) | (buf_reg[2]));
-//     raw_q_xyz[2] = (short)((unsigned short)(buf_reg[5] << 8) | (buf_reg[4]));
-//     raw_q_xyz[3] = (short)((unsigned short)(buf_reg[7] << 8) | (buf_reg[6]));
-
-//     raw_v_xyz[1] = (short)((unsigned short)(buf_reg[9] << 8) | (buf_reg[8]));
-//     raw_v_xyz[2] = (short)((unsigned short)(buf_reg[11] << 8) | (buf_reg[10]));
-//     raw_v_xyz[2] = (short)((unsigned short)(buf_reg[13] << 8) | (buf_reg[12]));
-
-//     quat[0] = (float)(raw_q_xyz[0] * 1.0f) / ae_q_lsb_div;
-//     quat[1] = (float)(raw_q_xyz[1] * 1.0f) / ae_q_lsb_div;
-//     quat[2] = (float)(raw_q_xyz[2] * 1.0f) / ae_q_lsb_div;
-//     quat[3] = (float)(raw_q_xyz[3] * 1.0f) / ae_q_lsb_div;
-
-//     velocity[0] = (float)(raw_v_xyz[0] * 1.0f) / ae_v_lsb_div;
-//     velocity[1] = (float)(raw_v_xyz[1] * 1.0f) / ae_v_lsb_div;
-//     velocity[2] = (float)(raw_v_xyz[2] * 1.0f) / ae_v_lsb_div;
-// }
-
-// void QMI8658_read_mag(float mag[3])
-// {
-//     unsigned char buf_reg[6];
-//     short mag_xyz[3];
-
-//     QMI8658_read_reg(QMI8658Register_Mx_L, buf_reg, 6); // 0x1f, 31
-//     mag_xyz[0] = (short)((unsigned short)(buf_reg[1] << 8) | (buf_reg[0]));
-//     mag_xyz[1] = (short)((unsigned short)(buf_reg[3] << 8) | (buf_reg[2]));
-//     mag_xyz[2] = (short)((unsigned short)(buf_reg[5] << 8) | (buf_reg[4]));
-//     mag[0]=(float)mag_xyz[0];
-//     mag[1]=(float)mag_xyz[1];
-//     mag[2]=(float)mag_xyz[2];
-// }
-
-static void RunCtrl9WriteCommand(Qmi8658* module, enum QMI8658_Ctrl9Command command, CalibrationData* registers)
-{
-    for (unsigned int i = 0; i < registers->RegisterCount; i++)
-    {
-        CalibrationRegisterData* data = &registers->Registers[i];
-        WriteSingle(module, data->Register, data->Value);
-    }
-
-    bool waiting = true;
-    AddInterrupt1Callback(module, CreateInterruptCallback(module, OnCtrl9CommandExecuted, &waiting));
-
-    WriteSingle(module, QMI8658Register_Ctrl9, command);
-
-    while (waiting)
-    {
-        tight_loop_contents(); // NO OP
-    }
-
-    // uint8_t status;
-    // ReadBytes(module, QMI8658Register_Status1, &status, 1);
-}
 
 // Returns the LSB divider based on data rate.
 static inline unsigned short ConfigureAccelerometer(Qmi8658* module, Qmi8658AccelerometerConfig* config)
@@ -935,6 +1032,59 @@ static inline unsigned short ConfigureGyroscope(Qmi8658* module, Qmi8658Gyroscop
     }
 }
 
+static void ConfigureAttitudeEngine(
+    Qmi8658* module,
+    bool enableMotionOnDemand,
+    enum QMI8658_AeOdr dataRate,
+    MotionDevice* attitudeEngineOut)
+{
+    ConfigureCtrl2(
+        module,
+        &(Ctrl2Values) { .FullScale = QMI8658AccRange_8g, .OutputDataRate = QMI8658AccOdr_1000Hz });
+
+    ConfigureCtrl3(
+        module,
+        &(Ctrl3Values) { .FullScale = QMI8658GyrRange_512dps, .OutputDataRate = QMI8658GyrOdr_1000Hz });
+
+    ConfigureCtrl5(
+        module, 
+        &(Ctrl5Values) 
+        { 
+            // .AccelerometerLowPassFilterEnabled = true, 
+            // .AccelerometerLowPassFilterMode = LowPassFilterMode3,
+            // .GyroscopeLowPassFilterEnabled = true,
+            // .GyroscopeLowPassFilterMode = LowPassFilterMode3
+        });
+
+    ConfigureCtrl7(
+        module,
+        &(Ctrl7Values)
+        {
+            .AttitudeEngineEnable = true,
+            .AccelerometerEnable = true,
+            .GyroscopeEnable = true
+        });
+
+    ConfigureCtrl6(
+        module,
+        &(Ctrl6Values)
+        {
+            .AttitudeEngineOutputDataRate = dataRate,
+            .MotionOnDemand = enableMotionOnDemand
+        });
+
+    memcpy(
+        attitudeEngineOut,
+        &(MotionDevice)
+        {
+            .Read = ReadAttitudeEngine,
+            .Module = module,
+            .VectorLsbDivider = 1 << 10,
+            .QuaternionLsbDivider = 1 << 14
+        },
+        sizeof(MotionDevice));
+}
+
 static void ConfigureSensors(
     Qmi8658* module,
     Qmi8658AccelerometerConfig* accelConfig, 
@@ -953,7 +1103,7 @@ static void ConfigureSensors(
             {
                 .Read = ReadAccelerometer,
                 .Module = module,
-                .LsbDivider = ConfigureAccelerometer(module, accelConfig)
+                .VectorLsbDivider = ConfigureAccelerometer(module, accelConfig)
             }, 
             sizeof(MotionDevice));
     }
@@ -968,7 +1118,7 @@ static void ConfigureSensors(
             {
                 .Read = ReadGyro,
                 .Module = module,
-                .LsbDivider = ConfigureGyroscope(module, gyroConfig)
+                .VectorLsbDivider = ConfigureGyroscope(module, gyroConfig)
             }, 
             sizeof(MotionDevice));
     }
@@ -988,6 +1138,24 @@ static void ConfigureSensors(
     module->AttitudeEngineEnabled = false;
     memcpy(&module->AccelConfig, accelConfig, sizeof(Qmi8658AccelerometerConfig));
     memcpy(&module->GyroConfig, gyroConfig, sizeof(Qmi8658GyroscopeConfig));
+}
+
+static void OnWomEvent(InterruptCallback* callback, Status0Values* status0, Status1Values* status1)
+{
+    if (!status1->WakeOnMotionEvent)
+    {
+        return;
+    }
+
+    WomEventPayload* payload = (WomEventPayload*)callback->Payload;
+    payload->Module->Sleeping = false;
+    if (payload->Callback)
+    {
+        (*payload->Callback)(payload->CallbackPayload);
+    }
+    
+    RemoveInterrupt1Callback(callback->Module, callback);
+    free(payload);
 }
 
 static void EnableWakeOnMotion(Qmi8658* module, void (*onWake)(void* payload), void* callbackPayload)
@@ -1030,17 +1198,17 @@ static void EnableWakeOnMotion(Qmi8658* module, void (*onWake)(void* payload), v
     // 7:6 Interrupt select
     // 0:5 Interrupt blanking time (in number of accelerometer samples)
     const unsigned char blankingTimeMask = 0b00111111;
-    CalibrationData cal = 
+    Ctrl9CalibrationData cal = 
     {
         .Registers = 
         {
             // WoM Threshold: absolute value in mg (with 1mg/LSB resolution).
-            (CalibrationRegisterData) 
+            (Ctrl9CalibrationRegisterData) 
             { 
                 .Register = QMI8658Register_Cal1_L,
                 .Value = (uint8_t)QMI8658WomThreshold_high
             },
-            (CalibrationRegisterData) 
+            (Ctrl9CalibrationRegisterData) 
             { 
                 .Register = QMI8658Register_Cal1_H,
 
@@ -1083,9 +1251,9 @@ static void DisableWakeOnMotion(Qmi8658* module)
     // following a reset event.
     ConfigureCtrl7(module, &(Ctrl7Values) { });
 
-    CalibrationData cal = 
+    Ctrl9CalibrationData cal = 
     {
-        .Registers = { (CalibrationRegisterData) { .Register = QMI8658Register_Cal1_L, .Value = 0 } },
+        .Registers = { (Ctrl9CalibrationRegisterData) { .Register = QMI8658Register_Cal1_L, .Value = 0 } },
         .RegisterCount = 1
     };
 
@@ -1131,22 +1299,12 @@ static inline bool InitI2c(i2c_inst_t* i2cInstance, Qmi8658* module)
     gpio_pull_up(DEV_SDA_PIN);
     gpio_pull_up(DEV_SCL_PIN);
 
-    // Enable INT1 interrupt.
-    gpio_init(IMU_INT1_GPIO_PIN);
-    gpio_set_dir(IMU_INT1_GPIO_PIN, GPIO_IN);
-    gpio_pull_down(IMU_INT1_GPIO_PIN);
-    gpio_set_irq_enabled_with_callback(
-        IMU_INT1_GPIO_PIN, 
-        GPIO_IRQ_EDGE_RISE | GPIO_IRQ_EDGE_FALL, 
-        true, 
-        OnGpioInterrupt1Received);
-
     unsigned char QMI8658_chip_id = 0x00;
     unsigned char QMI8658_slave[2] = { QMI8658_SLAVE_ADDR_L, QMI8658_SLAVE_ADDR_H };
     unsigned char iCount = 0;
     while (iCount < 2)
     {
-        module->ModuleSlaveAddress = QMI8658_slave_addr = QMI8658_slave[iCount];
+        module->ModuleSlaveAddress = QMI8658_slave[iCount];
 
         unsigned int retry = 0;
         while ((QMI8658_chip_id != 0x05) && (retry++ < 5))
@@ -1181,10 +1339,11 @@ void Qmi8658_Init(i2c_inst_t* i2cInstance, Qmi8658* out)
     {
         .Reset = Reset,
         .ConfigureSensors = ConfigureSensors,
+        .ConfigureAttitudeEngine = ConfigureAttitudeEngine,
         .EnableWakeOnMotion = EnableWakeOnMotion,
         .DisableWakeOnMotion = DisableWakeOnMotion,
-        // .ReadCombined = ReadCombined,
         .PowerDown = PowerDown,
+        // .ReadCombined = ReadCombined,
         // .Accelerometer = 
         // {
         //     .Read = ReadAccelerometer,
@@ -1201,9 +1360,31 @@ void Qmi8658_Init(i2c_inst_t* i2cInstance, Qmi8658* out)
     };
 
     InitI2c(i2cInstance, &module);
-
-    gpioInterruptCallback.Module = out;
-    gpioInterruptCallback.OnInterruptReceived = OnInterrupt1;
-
     memcpy(out, &module, sizeof(Qmi8658));
+
+    gpioInterrupt1Callback.Module = out;
+    gpioInterrupt1Callback.OnInterruptReceived = OnInterrupt1;
+
+    gpioInterrupt2Callback.Module = out;
+    gpioInterrupt2Callback.OnInterruptReceived = OnInterrupt2;
+
+    // Enable INT1 interrupt.
+    gpio_init(IMU_INT1_GPIO_PIN);
+    gpio_set_dir(IMU_INT1_GPIO_PIN, GPIO_IN);
+    gpio_pull_down(IMU_INT1_GPIO_PIN);
+    gpio_set_irq_enabled_with_callback(
+        IMU_INT1_GPIO_PIN, 
+        GPIO_IRQ_EDGE_RISE | GPIO_IRQ_EDGE_FALL, 
+        true, 
+        OnGpioInterrupt1Received);
+    
+    // Enable INT2 interrupt.
+    gpio_init(IMU_INT2_GPIO_PIN);
+    gpio_set_dir(IMU_INT2_GPIO_PIN, GPIO_IN);
+    gpio_pull_down(IMU_INT2_GPIO_PIN);
+    gpio_set_irq_enabled_with_callback(
+        IMU_INT2_GPIO_PIN, 
+        GPIO_IRQ_EDGE_RISE | GPIO_IRQ_EDGE_FALL, 
+        true, 
+        OnGpioInterrupt2Received);
 }

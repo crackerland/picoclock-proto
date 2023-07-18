@@ -1,6 +1,6 @@
 // QMI8658C
 // Low Noise, Wide Bandwidth 6D Inertial Measurement
-// Unit with Motion Co-Processor and Sensor Fusion
+// Unit with Motion CoProcessor and Sensor Fusion
 
 #ifndef QMI8658_H
 #define QMI8658_H
@@ -254,6 +254,8 @@ enum QMI8658_Ctrl9Command
 {
     QMI8658_Ctrl9_Cmd_NOP = 0X00,
     QMI8658_Ctrl9_Cmd_GyroBias = 0X01,
+
+    // CTRL_CMD_REQ_SDI | 0x03 | Ctrl9R | SDI MOD (Motion on Demand), request to read SDI data
     QMI8658_Ctrl9_Cmd_Rqst_Sdi_Mod = 0X03,
     QMI8658_Ctrl9_Cmd_WoM_Setting = 0x08,
     QMI8658_Ctrl9_Cmd_AccelHostDeltaOffset = 0x09,
@@ -371,7 +373,7 @@ enum QMI8658_AeOdr
     QMI8658AeOdr_16Hz = 0x04,  /*!< \brief 16Hz output rate. */
     QMI8658AeOdr_32Hz = 0x05,  /*!< \brief 32Hz output rate. */
     QMI8658AeOdr_64Hz = 0x06,  /*!< \brief 64Hz output rate. */
-    QMI8658AeOdr_128Hz = 0x07, /*!< \brief 128Hz output rate. */
+    // QMI8658AeOdr_128Hz = 0x07, /*!< \brief 128Hz output rate. */
     /*!
      * \brief Motion on demand mode.
      *
@@ -384,7 +386,7 @@ enum QMI8658_AeOdr
      * AttitudeEngine will respond with a data ready event (INT2) when the
      * data is available to be read.
      */
-    QMI8658AeOdr_motionOnDemand = 128
+    // QMI8658AeOdr_motionOnDemand = 128
 };
 
 enum QMI8658_MagOdr
@@ -518,21 +520,32 @@ enum QMI8658_WakeOnMotionThreshold
     QMI8658WomThreshold_low = 32    /*!< Low threshold - small motion needed to wake. */
 };
 
-// Describes the the right-handed cartesian coordinates of the accelerometer, magnetometer, or gyroscope. 
-typedef struct QMI8658_MotionCoordinates
+// Describes a vector or right-handed cartesian coordinates, depending on how the 
+// source device is configured.
+typedef struct Qmi8658_MotionVector
 {
     float X;
     float Y;
     float Z;
 }
-QMI8658_MotionCoordinates;
+Qmi8658_MotionVector;
+
+typedef struct Qmi8658_Quaternion
+{
+    float W;
+    float X;
+    float Y;
+    float Z;
+}
+Qmi8658_Quaternion;
 
 struct Qmi8658;
 
 typedef struct MotionDevice
 {
-    void (*Read)(struct MotionDevice*, QMI8658_MotionCoordinates* out);
-    unsigned short LsbDivider;
+    void (*Read)(struct MotionDevice*, Qmi8658_MotionVector* vectorOut, Qmi8658_Quaternion* quaternionOut);
+    unsigned short VectorLsbDivider;
+    unsigned short QuaternionLsbDivider;
     struct Qmi8658* Module;
 } 
 MotionDevice;
@@ -557,9 +570,38 @@ typedef struct
 }
 Qmi8658GyroscopeConfig;
 
+typedef struct Status0Values
+{
+    // (sDA) Whether the Attitude Engine output registers have data avilable.
+    bool AttitudeEngineDataAvailable;
+
+    // (mDA) Whether the external magnetometer output registers have data avilable.
+    bool MagnetometerDataAvailable;
+    
+    // (gDA) Whether the gyroscope output registers have data avilable.
+    bool GyroscopeDataAvailable;
+
+    // (aDA) Whether the accelerometer output registers have data avilable.
+    bool AccelerometerDataAvailable;
+}
+Status0Values;
+
+typedef struct Status1Values
+{
+    // (reserved - See 9.3) Whether a "Wake on Motion" event has been raised.
+    bool WakeOnMotionEvent;
+
+    // (CmdDone) Whether a CTRL9 command has completed.
+    bool Ctrl9CommandDone;
+}
+Status1Values;
+
 struct InterruptCallback;
 struct Qmi8658;
-typedef void (*InterruptCallbackHandler)(struct InterruptCallback* callback, uint8_t status);
+typedef void (*InterruptCallbackHandler)(
+    struct InterruptCallback* callback, 
+    struct Status0Values* status0,
+    struct Status1Values* status1);
 
 typedef struct InterruptCallback
 {
@@ -572,6 +614,13 @@ InterruptCallback;
 
 typedef struct Qmi8658
 {
+    // All QMI8658C functional blocks are switched off to
+    // minimize power consumption. Digital interfaces remain on
+    // allowing communication with the device. All configuration
+    // register values are preserved, and output data register
+    // values are maintained. The current in this mode is typically
+    // 20 µA. The host must initiate this mode by setting
+    // sensorDisable=1.
     void (*PowerDown)(struct Qmi8658*);
     void (*Reset)(struct Qmi8658*);
     void (*ConfigureSensors)(
@@ -584,6 +633,7 @@ typedef struct Qmi8658
     void (*ConfigureAttitudeEngine)(
         struct Qmi8658*,
         bool enableMotionOnDemand,
+        enum QMI8658_AeOdr dataRate,
         MotionDevice* attitudeEngineOut);
 
     // void (*ReadCombined)(
@@ -604,6 +654,7 @@ typedef struct Qmi8658
     Qmi8658AccelerometerConfig AccelConfig;
     Qmi8658GyroscopeConfig GyroConfig;
     InterruptCallback* Interrupt1Callbacks;
+    InterruptCallback* Interrupt2Callbacks;
 }
 Qmi8658;
 
@@ -613,13 +664,6 @@ extern void Qmi8658_Init(i2c_inst_t* i2cInstance, Qmi8658* out);
 // extern unsigned char QMI8658_read_reg(unsigned char reg, unsigned char *buf, unsigned short len);
 // extern unsigned char QMI8658_reset(void);
 
-// All QMI8658C functional blocks are switched off to
-// minimize power consumption. Digital interfaces remain on
-// allowing communication with the device. All configuration
-// register values are preserved, and output data register
-// values are maintained. The current in this mode is typically
-// 20 µA. The host must initiate this mode by setting
-// sensorDisable=1.
 // extern void QMI8658_powerDown(void);
 
 // extern unsigned int QMI8658_read_timestamp();

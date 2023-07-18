@@ -258,31 +258,38 @@ static inline void AppMain()
     Qmi8658 module;
     Qmi8658_Init(i2c1, &module);
 
-    MotionDevice accelerometer;
-    MotionDevice gyro;
-    (*module.ConfigureSensors)(
+    // MotionDevice accelerometer;
+    // MotionDevice gyro;
+    // (*module.ConfigureSensors)(
+    //     &module, 
+    //     &(Qmi8658AccelerometerConfig)
+    //     {
+    //         .Enabled = true,
+    //         .Range = QMI8658AccRange_8g,
+    //         .Odr = QMI8658AccOdr_1000Hz,
+    //         .LowPassFilterEnabled = false,
+    //         .SelfTestEnabled = false
+    //     },
+    //     &(Qmi8658GyroscopeConfig)
+    //     {
+    //         .Enabled = true,
+    //         .Range = QMI8658GyrRange_512dps,
+    //         .Odr = QMI8658GyrOdr_1000Hz,
+    //         .LowPassFilterEnabled = false,
+    //         .SelfTestEnabled = false
+    //     },
+    //     &accelerometer,
+    //     &gyro);
+
+    MotionDevice attitudeEngine;
+    (*module.ConfigureAttitudeEngine)(
         &module, 
-        &(Qmi8658AccelerometerConfig)
-        {
-            .Enabled = true,
-            .Range = QMI8658AccRange_8g,
-            .Odr = QMI8658AccOdr_1000Hz,
-            .LowPassFilterEnabled = false,
-            .SelfTestEnabled = false
-        },
-        &(Qmi8658GyroscopeConfig)
-        {
-            .Enabled = true,
-            .Range = QMI8658GyrRange_512dps,
-            .Odr = QMI8658GyrOdr_1000Hz,
-            .LowPassFilterEnabled = false,
-            .SelfTestEnabled = false
-        },
-        &accelerometer,
-        &gyro);
+        true, 
+        QMI8658AeOdr_32Hz,
+        &attitudeEngine);
 
     PicoPowerManager powerManager;
-    PicoPowerManager_Init(&lcdScreen, &module, &gyro, &powerManager);
+    PicoPowerManager_Init(&lcdScreen, &module, &attitudeEngine, &powerManager);
 
     ColorConverter colorConverter;
     PicoColorConverter_Init(&colorConverter);
