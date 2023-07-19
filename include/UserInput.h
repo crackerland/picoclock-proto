@@ -7,6 +7,7 @@ typedef struct UserInput
     void (*Minus)(struct UserInput*);
     void (*Select)(struct UserInput*);
     void (*Sleep)(struct UserInput*);
+    void (*Reset)(struct UserInput*);
 }
 UserInput;
 

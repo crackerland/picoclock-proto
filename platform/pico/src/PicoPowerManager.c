@@ -39,6 +39,11 @@ static void WakeUp(PowerManager* powerManager)
     PicoPowerManager* this = (PicoPowerManager*)powerManager;
 }
 
+static void Reset(PowerManager* powerManager)
+{
+    PicoPowerManager* this = (PicoPowerManager*)powerManager;
+}
+
 static Battery* GetBattery(PowerManager* manager)
 {
     PicoPowerManager* this = (PicoPowerManager*)manager;
@@ -137,6 +142,7 @@ void PicoPowerManager_Init(LcdScreen* screen, Qmi8658* module, MotionDevice* mot
             .Sleep = Sleep,
             .WakeUp = WakeUp,
             .ShutDown = ShutDown,
+            .Reset = Reset,
             .GetBattery = GetBattery
         },
         .MotionDevice = motionDevice,

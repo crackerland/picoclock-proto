@@ -36,6 +36,12 @@ static inline void HandleInput(PendingInput* pending, AppResources* app)
         (*app->PowerManager->Sleep)(app->PowerManager);
     }
 
+    if (pending->Reset)
+    {
+        printf("Polled input: RESET\n");
+        (*app->PowerManager->Reset)(app->PowerManager);
+    }
+
     PendingInput cleared = { };
     memcpy(pending, &cleared, sizeof(PendingInput));
 }

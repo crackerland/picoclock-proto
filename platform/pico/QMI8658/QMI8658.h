@@ -11,7 +11,7 @@
 #include <stdio.h>
 #include "hardware/adc.h"
 #include "hardware/i2c.h"
-
+#include "TaskScheduler.h"
 
 #define UBYTE uint8_t
 #define UWORD uint16_t
@@ -599,13 +599,14 @@ Status1Values;
 struct InterruptCallback;
 struct Qmi8658;
 typedef void (*InterruptCallbackHandler)(
-    struct InterruptCallback* callback, 
-    struct Status0Values* status0,
-    struct Status1Values* status1);
+    struct InterruptCallback* callback);
+    // struct Status0Values* status0,
+    // struct Status1Values* status1);
 
 typedef struct InterruptCallback
 {
     InterruptCallbackHandler OnInterruptReceived;
+    bool Complete;
     void* Payload;
     struct InterruptCallback* Next;
     struct Qmi8658* Module;
@@ -645,6 +646,7 @@ typedef struct Qmi8658
     void (*DisableWakeOnMotion)(struct Qmi8658*);
     // MotionDevice Accelerometer;
     // MotionDevice Gyroscope;
+    DeferredTaskScheduler* Scheduler;
     bool Sleeping;
     bool WakeOnMotionEnabled;
     i2c_inst_t* I2cInstance;
@@ -658,26 +660,6 @@ typedef struct Qmi8658
 }
 Qmi8658;
 
-extern void Qmi8658_Init(i2c_inst_t* i2cInstance, Qmi8658* out);
-
-// extern unsigned char QMI8658_write_reg(unsigned char reg, unsigned char value);
-// extern unsigned char QMI8658_read_reg(unsigned char reg, unsigned char *buf, unsigned short len);
-// extern unsigned char QMI8658_reset(void);
-
-// extern void QMI8658_powerDown(void);
-
-// extern unsigned int QMI8658_read_timestamp();
-// extern void QMI8658_read_ae(float quat[4], float velocity[3]);
-// extern void QMI8658_read_mag(float mag[3]);
-// extern unsigned char QMI8658_readStatus0(void);
-// extern unsigned char QMI8658_readStatus1(void);
-// extern float QMI8658_readTemp(void);
-
-// void DEV_I2C_Write_Byte(uint8_t addr, uint8_t reg, uint8_t Value);
-// void DEV_I2C_Write_Register(uint8_t addr, uint8_t reg, uint16_t value);
-// void DEV_I2C_Write_nByte(uint8_t addr, uint8_t *pData, uint32_t Len);
-// uint8_t DEV_I2C_Read_Byte(uint8_t addr, uint8_t reg);
-// void DEV_I2C_Read_Register(uint8_t addr, uint8_t reg, uint16_t *value);
-// void DEV_I2C_Read_nByte(uint8_t addr, uint8_t reg, uint8_t *pData, uint32_t Len);
+extern void Qmi8658_Init(i2c_inst_t* i2cInstance, DeferredTaskScheduler* scheduler, Qmi8658* out);
 
 #endif

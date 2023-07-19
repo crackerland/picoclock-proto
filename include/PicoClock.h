@@ -21,6 +21,7 @@ typedef struct PendingInput
     bool Minus;
     bool Select;
     bool Sleep;
+    bool Reset;
 }
 PendingInput;
 

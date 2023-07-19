@@ -20,7 +20,9 @@ add_library(core
 	${RPI_CORE}/src/collections/LinkedList.c
 	${RPI_CORE}/src/collections/IterableQueryable.c
 	${RPI_CORE}/src/print_helper.c
-	${RPI_CORE}/src/Tasks.c)
+	${RPI_CORE}/src/Tasks.c
+	${RPI_CORE}/src/TaskScheduler.c
+  )
 
 add_library(font
   ${RPI_FONT}/src/FontPainterEx.c

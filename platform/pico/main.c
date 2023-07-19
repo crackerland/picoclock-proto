@@ -37,12 +37,14 @@ extern _Colors Colors;
 #define CMD_MINUS 0x3
 #define CMD_SELECT 0x4
 #define CMD_SLEEP 0x5
+#define CMD_RESET 0x6
 
 #define CMD_TEXT_SET_TIME "TIM"
 #define CMD_TEXT_PLUS "PLS"
 #define CMD_TEXT_MINUS "MIN"
 #define CMD_TEXT_SELECT "SEL"
 #define CMD_TEXT_SLEEP "SLP"
+#define CMD_TEXT_RESET "RST"
 
 #define SAVE_STATE_CONTENT_SIZE (FLASH_PAGE_SIZE - 5)
 typedef struct SaveState
@@ -149,6 +151,10 @@ static inline void HandleMessage(CommandState* commandState, UserInput* input)
             case CMD_SLEEP:
                 (*input->Sleep)(input);
                 break;
+
+            case CMD_RESET:
+                // (*input->Reset)(input);
+                break;
         }
     }
 
@@ -228,6 +234,11 @@ static void HandleCommand(char command[4], bool* cancel)
         printf("Sleep\n");
         PushMessage(CMD_SLEEP);
     }
+    else if (!strcmp(CMD_TEXT_RESET, command))
+    {
+        printf("Reset\n");
+        PushMessage(CMD_RESET);
+    }
 }
 
 static void PollMessage(CommandState* commandState, UserInput* input)
@@ -255,41 +266,45 @@ static inline void AppMain()
     LcdScreen lcdScreen = { };
     LcdScreen_Init(&timer.Base, ScanDirection_Horizontal, &lcdScreen);
 
+    DeferredTaskScheduler scheduler;
+    DeferredTaskScheduler_Init(&scheduler);
+
     Qmi8658 module;
-    Qmi8658_Init(i2c1, &module);
+    Qmi8658_Init(i2c1, &scheduler, &module);
 
-    // MotionDevice accelerometer;
-    // MotionDevice gyro;
-    // (*module.ConfigureSensors)(
-    //     &module, 
-    //     &(Qmi8658AccelerometerConfig)
-    //     {
-    //         .Enabled = true,
-    //         .Range = QMI8658AccRange_8g,
-    //         .Odr = QMI8658AccOdr_1000Hz,
-    //         .LowPassFilterEnabled = false,
-    //         .SelfTestEnabled = false
-    //     },
-    //     &(Qmi8658GyroscopeConfig)
-    //     {
-    //         .Enabled = true,
-    //         .Range = QMI8658GyrRange_512dps,
-    //         .Odr = QMI8658GyrOdr_1000Hz,
-    //         .LowPassFilterEnabled = false,
-    //         .SelfTestEnabled = false
-    //     },
-    //     &accelerometer,
-    //     &gyro);
-
-    MotionDevice attitudeEngine;
-    (*module.ConfigureAttitudeEngine)(
+    MotionDevice accelerometer;
+    MotionDevice gyro;
+    (*module.ConfigureSensors)(
         &module, 
-        true, 
-        QMI8658AeOdr_32Hz,
-        &attitudeEngine);
+        &(Qmi8658AccelerometerConfig)
+        {
+            .Enabled = true,
+            .Range = QMI8658AccRange_8g,
+            .Odr = QMI8658AccOdr_1000Hz,
+            .LowPassFilterEnabled = false,
+            .SelfTestEnabled = false
+        },
+        &(Qmi8658GyroscopeConfig)
+        {
+            .Enabled = true,
+            .Range = QMI8658GyrRange_512dps,
+            .Odr = QMI8658GyrOdr_1000Hz,
+            .LowPassFilterEnabled = false,
+            .SelfTestEnabled = false
+        },
+        &accelerometer,
+        &gyro);
+
+    // MotionDevice attitudeEngine;
+    // (*module.ConfigureAttitudeEngine)(
+    //     &module, 
+    //     true, 
+    //     QMI8658AeOdr_32Hz,
+    //     &attitudeEngine);
 
     PicoPowerManager powerManager;
-    PicoPowerManager_Init(&lcdScreen, &module, &attitudeEngine, &powerManager);
+    PicoPowerManager_Init(&lcdScreen, &module, &gyro, &powerManager);
+    // PicoPowerManager_Init(&lcdScreen, &module, &attitudeEngine, &powerManager);
 
     ColorConverter colorConverter;
     PicoColorConverter_Init(&colorConverter);
@@ -301,6 +316,11 @@ static inline void AppMain()
     CommandState commandState = { .PendingCommand = CMD_NONE };
     while(1)
     {
+        DeferredTask* task = NULL;
+        while ((task = (*scheduler.Poll)(&scheduler)))
+        {
+        }
+        
         PollMessage(&commandState, &app.Input.Base);
         (*powerManager.Update)(&powerManager);
         (*app.Lifecycle.Loop)(&app.Resources);
