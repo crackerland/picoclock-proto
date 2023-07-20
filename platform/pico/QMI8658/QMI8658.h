@@ -657,6 +657,8 @@ typedef struct Qmi8658
     Qmi8658GyroscopeConfig GyroConfig;
     InterruptCallback* Interrupt1Callbacks;
     InterruptCallback* Interrupt2Callbacks;
+    bool Int1High;
+    bool Int2High;
 }
 Qmi8658;
 

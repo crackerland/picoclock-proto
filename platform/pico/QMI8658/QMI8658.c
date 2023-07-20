@@ -833,12 +833,13 @@ static inline void NotifyInterruptCallbacks(Qmi8658* module, InterruptCallback* 
 
 static void OnInterrupt1(Qmi8658* module)
 {
-    if (!module->Interrupt1Callbacks)
-    {
-        return;
-    }
+    module->Int1High = true;
+    // if (!module->Interrupt1Callbacks)
+    // {
+    //     return;
+    // }
 
-    NotifyInterruptCallbacks(module, module->Interrupt1Callbacks);
+    // NotifyInterruptCallbacks(module, module->Interrupt1Callbacks);
     // Status1Values status1;
     // ReadStatus1(module, &status1);
 
@@ -847,16 +848,37 @@ static void OnInterrupt1(Qmi8658* module)
 
 static void OnInterrupt2(Qmi8658* module)
 {
-    if (!module->Interrupt2Callbacks)
-    {
-        return;
-    }
+    module->Int2High = true;
+    // if (!module->Interrupt2Callbacks)
+    // {
+    //     return;
+    // }
 
-    NotifyInterruptCallbacks(module, module->Interrupt2Callbacks);
+    // NotifyInterruptCallbacks(module, module->Interrupt2Callbacks);
     // Status0Values status0;
     // ReadStatus0(module, &status0);
 
     // NotifyInterruptCallbacks(module, module->Interrupt2Callbacks, &status0, &(Status1Values) { });
+}
+
+static inline void PollInt1(Qmi8658* module)
+{
+    while (!module->Int1High)
+    {
+        tight_loop_contents();
+    }
+
+    NotifyInterruptCallbacks(module, module->Interrupt1Callbacks);
+}
+
+static inline void PollInt2(Qmi8658* module)
+{
+    while (!module->Int2High)
+    {
+        tight_loop_contents();
+    }
+
+    NotifyInterruptCallbacks(module, module->Interrupt2Callbacks);
 }
 
 static void OnGpioInterruptReceived(uint gpio, uint32_t eventMask)
@@ -898,7 +920,8 @@ static void RunCtrl9ReadCommand(Qmi8658* module, enum QMI8658_Ctrl9Command comma
 
     while (waiting)
     {
-        tight_loop_contents(); 
+        PollInt1(module);
+        // tight_loop_contents(); 
     }
 }
 
@@ -1012,7 +1035,8 @@ static inline Task* QueryMotionOnDemand(Qmi8658* module)
 
     while (waiting)
     {
-        tight_loop_contents();
+        PollInt2();
+        // tight_loop_contents();
     }
 }
 
