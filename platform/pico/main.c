@@ -27,7 +27,7 @@
 #include "hardware/flash.h"
 #include "hardware/watchdog.h"
 
-#define MULTICORE 
+// #define MULTICORE 
 
 extern _Colors Colors;
 
@@ -244,10 +244,10 @@ static void HandleCommand(char command[4], bool* cancel)
 static void PollMessage(CommandState* commandState, UserInput* input)
 {
 #ifndef MULTICORE
-    bool cancel = false;
-    char command[4] = { };
-    ReadBuffer(command, 3, &cancel);
-    HandleCommand(command, &cancel);
+    // bool cancel = false;
+    // char command[4] = { };
+    // ReadBuffer(command, 3, &cancel);
+    // HandleCommand(command, &cancel);
 #endif
 
     if (MessagePending())
