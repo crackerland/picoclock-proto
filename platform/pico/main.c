@@ -27,7 +27,7 @@
 #include "hardware/flash.h"
 #include "hardware/watchdog.h"
 
-// #define MULTICORE 
+#define MULTICORE 
 
 extern _Colors Colors;
 
@@ -319,6 +319,7 @@ static inline void AppMain()
         DeferredTask* task = NULL;
         while ((task = (*scheduler.Poll)(&scheduler)))
         {
+            free(task);
         }
         
         PollMessage(&commandState, &app.Input.Base);

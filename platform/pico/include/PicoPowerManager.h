@@ -13,7 +13,9 @@ typedef struct PicoPowerManager
     LcdScreen* Screen;
     Qmi8658* Module;
     MotionDevice* MotionDevice;
+    // bool Sleeping;
     uint32_t LastMovementTime;
+    uint8_t BacklightAtSleep;
     void (*UpdateState)(struct PicoPowerManager*);
     void (*OnMotion)(struct PicoPowerManager*);
     void (*Update)(struct PicoPowerManager*);

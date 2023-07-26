@@ -5,6 +5,18 @@
 
 static void UpdateStateNormal(PicoPowerManager*);
 
+static void OnWake(void* payload)
+{
+    PicoPowerManager* this = (PicoPowerManager*)payload;
+    // this->Sleeping = false;
+
+    vreg_set_voltage(VREG_VOLTAGE_DEFAULT);
+    (*this->Module->DisableWakeOnMotion)(this->Module);
+
+    (*this->Screen->SetSleep)(this->Screen, false);
+    (*this->Screen->Base.SetBacklightPercentage)(&this->Screen->Base, this->BacklightAtSleep);
+}
+
 static void ShutDown(PowerManager* powerManager)
 {
     PicoPowerManager* this = (PicoPowerManager*)powerManager;
@@ -14,24 +26,24 @@ static void ShutDown(PowerManager* powerManager)
 static void Sleep(PowerManager* powerManager)
 {
     PicoPowerManager* this = (PicoPowerManager*)powerManager;
-
-    uint8_t backlight = this->Screen->CurrentBacklightPercentage;
+    // this->Sleeping = true;
+    this->BacklightAtSleep = this->Screen->CurrentBacklightPercentage;
     (*this->Screen->Base.SetBacklightPercentage)(&this->Screen->Base, 0);
     (*this->Screen->SetSleep)(this->Screen, true);
 
-    (*this->Module->EnableWakeOnMotion)(this->Module, NULL, NULL);
-    // vreg_set_voltage(VREG_VOLTAGE_MIN);
+    (*this->Module->EnableWakeOnMotion)(this->Module, OnWake, this);
+    vreg_set_voltage(VREG_VOLTAGE_MIN);
     // xosc_dormant();
-    while (this->Module->Sleeping)
-    {
-        sleep_ms(250);
-    }
+    // while (this->Sleeping)
+    // {
+    //     sleep_ms(250);
+    // }
 
     // vreg_set_voltage(VREG_VOLTAGE_DEFAULT);
-    (*this->Module->DisableWakeOnMotion)(this->Module);
+    // (*this->Module->DisableWakeOnMotion)(this->Module);
 
-    (*this->Screen->SetSleep)(this->Screen, false);
-    (*this->Screen->Base.SetBacklightPercentage)(&this->Screen->Base, backlight);
+    // (*this->Screen->SetSleep)(this->Screen, false);
+    // (*this->Screen->Base.SetBacklightPercentage)(&this->Screen->Base, backlight);
 }
 
 static void WakeUp(PowerManager* powerManager)

@@ -109,12 +109,14 @@ enum QMI8658Register
     QMI8658Register_FifoData, // 20
     /*! \brief FIFO status register. */
     QMI8658Register_FifoStatus, // 21
-    /*! \brief Output data overrun and availability. */
+    /*! \brief I2C Master Status. */
+    QMI8658Register_I2cmStatus = 44,
+    /*! \brief Interrupt status. */
     QMI8658Register_StatusInt = 45,
     /*! \brief Output data overrun and availability. */
-    QMI8658Register_Status0,
+    QMI8658Register_Status0 = 46,
     /*! \brief Miscellaneous status register. */
-    QMI8658Register_Status1,
+    QMI8658Register_Status1 = 47,
     /*! \brief timestamp low. */
     QMI8658Register_Timestamp_L = 48,
     /*! \brief timestamp low. */
@@ -193,8 +195,6 @@ enum QMI8658Register
     QMI8658Register_AeReg1 = 87,
     /*! \brief AttitudeEngine overflow flags. */
     QMI8658Register_AeOverflow,
-
-    QMI8658Register_I2CM_STATUS = 110
 };
 
 enum QMI8658_Ois_Register
@@ -637,17 +637,9 @@ typedef struct Qmi8658
         enum QMI8658_AeOdr dataRate,
         MotionDevice* attitudeEngineOut);
 
-    // void (*ReadCombined)(
-    //     struct Qmi8658*,
-    //     QMI8658_MotionCoordinates* acc, 
-    //     QMI8658_MotionCoordinates* gyro);
-
     void (*EnableWakeOnMotion)(struct Qmi8658*, void (*onWake)(void* payload), void* callbackPayload);
     void (*DisableWakeOnMotion)(struct Qmi8658*);
-    // MotionDevice Accelerometer;
-    // MotionDevice Gyroscope;
     DeferredTaskScheduler* Scheduler;
-    bool Sleeping;
     bool WakeOnMotionEnabled;
     i2c_inst_t* I2cInstance;
     uint8_t ModuleSlaveAddress;
