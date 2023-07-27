@@ -21,6 +21,7 @@ static void GetDateTime(DateTimeProvider* provider, DateTime* out)
     if (printTime)
     {
         printf("Time: %lu\n", (unsigned long)now);
+        fflush(stdin);
     }
 }
 

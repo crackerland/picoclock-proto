@@ -25,6 +25,13 @@ typedef struct PendingInput
 }
 PendingInput;
 
+typedef struct AppPreferences
+{
+    unsigned int SleepTimeoutMillis;
+    unsigned int DimTimeoutMillis;
+}
+AppPreferences;
+
 typedef struct AppResources
 {
     Screen* Screen;

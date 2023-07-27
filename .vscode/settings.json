@@ -27,5 +27,5 @@
         "watchdog.h": "c",
         "functional": "c"
     },
-    "cmake.sourceDirectory": "C:/Users/aslcl/Development/ExternalLibs/picoclock-proto/platform/pico"
+    "cmake.sourceDirectory": "C:/Users/aslcl/Development/picoclock-proto/platform/pico"
 }

@@ -3,18 +3,40 @@
 #include "QMI8658.h"
 #include "hardware/vreg.h"
 
+typedef struct SleepChangeCallback
+{
+    SleepChangeCallbackHandler OnSleepChanged;
+    PicoPowerManager* PowerManager;
+    void* Payload;
+}
+SleepChangeCallback;
+
 static void UpdateStateNormal(PicoPowerManager*);
+
+static inline void NotifySleepStateChanged(PicoPowerManager* this)
+{
+    Iterable* callbacks = (*this->SleepChangeCallbacks.Base.GetIterable)(&this->SleepChangeCallbacks.Base);
+    Iterator* next = (*callbacks->Start)(callbacks);
+    while (next)
+    {
+        SleepChangeCallback* callback = (*next->GetValue)(next);
+        (*callback->OnSleepChanged)(&this->Base, false, callback->Payload);
+        next = (*next->GetNext)(next);
+    }
+}
 
 static void OnWake(void* payload)
 {
     PicoPowerManager* this = (PicoPowerManager*)payload;
-    // this->Sleeping = false;
+    this->Sleeping = false;
 
-    vreg_set_voltage(VREG_VOLTAGE_DEFAULT);
+    // vreg_set_voltage(VREG_VOLTAGE_DEFAULT);
     (*this->Module->DisableWakeOnMotion)(this->Module);
 
     (*this->Screen->SetSleep)(this->Screen, false);
     (*this->Screen->Base.SetBacklightPercentage)(&this->Screen->Base, this->BacklightAtSleep);
+
+    NotifySleepStateChanged(this);
 }
 
 static void ShutDown(PowerManager* powerManager)
@@ -26,24 +48,17 @@ static void ShutDown(PowerManager* powerManager)
 static void Sleep(PowerManager* powerManager)
 {
     PicoPowerManager* this = (PicoPowerManager*)powerManager;
-    // this->Sleeping = true;
+    this->Sleeping = true;
     this->BacklightAtSleep = this->Screen->CurrentBacklightPercentage;
     (*this->Screen->Base.SetBacklightPercentage)(&this->Screen->Base, 0);
     (*this->Screen->SetSleep)(this->Screen, true);
 
     (*this->Module->EnableWakeOnMotion)(this->Module, OnWake, this);
-    vreg_set_voltage(VREG_VOLTAGE_MIN);
-    // xosc_dormant();
-    // while (this->Sleeping)
-    // {
-    //     sleep_ms(250);
-    // }
 
-    // vreg_set_voltage(VREG_VOLTAGE_DEFAULT);
-    // (*this->Module->DisableWakeOnMotion)(this->Module);
+    NotifySleepStateChanged(this);
 
-    // (*this->Screen->SetSleep)(this->Screen, false);
-    // (*this->Screen->Base.SetBacklightPercentage)(&this->Screen->Base, backlight);
+    // This causes a reboot.
+    // vreg_set_voltage(VREG_VOLTAGE_MIN);
 }
 
 static void WakeUp(PowerManager* powerManager)
@@ -71,12 +86,10 @@ static void OnMotion(PicoPowerManager* state)
 
 static void UpdateStateDim(PicoPowerManager* state)
 {
-    uint32_t currentTime = time_us_32();
-    uint32_t ellapsedTime = currentTime - state->LastMovementTime;
+    uint32_t ellapsedTime = (time_us_32() - state->LastMovementTime) / 1000;
 
-    if (ellapsedTime > 15000000)
+    if (ellapsedTime > state->Preferences->SleepTimeoutMillis)
     {
-        // 15 secs. ellapsed without movement.
         (*state->Base.Sleep)(&state->Base);
         (*state->OnMotion)(state);
     }
@@ -84,12 +97,10 @@ static void UpdateStateDim(PicoPowerManager* state)
 
 static void UpdateStateNormal(PicoPowerManager* state)
 {
-    uint32_t currentTime = time_us_32();
-    uint32_t ellapsedTime = currentTime - state->LastMovementTime;
+    uint32_t ellapsedTime = (time_us_32() - state->LastMovementTime) / 1000;
 
-    if (ellapsedTime > 5000000)
+    if (ellapsedTime > state->Preferences->DimTimeoutMillis)
     {
-        // 5 secs. ellapsed without movement.
         (*state->Screen->Base.SetBacklightPercentage)(&state->Screen->Base, 5);
         state->UpdateState = UpdateStateDim;
     }
@@ -122,15 +133,15 @@ static void Update(PicoPowerManager* powerManager)
     Qmi8658_Quaternion quaternion;
     (*powerManager->MotionDevice->Read)(powerManager->MotionDevice, &vector, &quaternion);
 
-    printf(
-        "Vector (%f, %f, %f) Quaternion (%f, %f, %f, %f)\n", 
-        vector.X, 
-        vector.Y, 
-        vector.Z,
-        quaternion.W,
-        quaternion.X,
-        quaternion.Y,
-        quaternion.Z);
+    // printf(
+    //     "Vector (%f, %f, %f) Quaternion (%f, %f, %f, %f)\n", 
+    //     vector.X, 
+    //     vector.Y, 
+    //     vector.Z,
+    //     quaternion.W,
+    //     quaternion.X,
+    //     quaternion.Y,
+    //     quaternion.Z);
 
 #define GYRMAX 300.0f
 // #define ACCMAX 500.0f
@@ -145,7 +156,22 @@ static void Update(PicoPowerManager* powerManager)
     }
 }
 
-void PicoPowerManager_Init(LcdScreen* screen, Qmi8658* module, MotionDevice* motionDevice, PicoPowerManager* out)
+static void AddSleepChangeCallback(PowerManager* powerManager, SleepChangeCallbackHandler onChange, void* payload)
+{
+    PicoPowerManager* this = (PicoPowerManager*)powerManager;
+    SleepChangeCallback* callback = (SleepChangeCallback*)malloc(sizeof(SleepChangeCallback));
+    callback->Payload = payload;
+    callback->PowerManager = this;
+    callback->OnSleepChanged = onChange;
+    (*this->SleepChangeCallbacks.Base.Add)(&this->SleepChangeCallbacks.Base, callback);
+}
+
+void PicoPowerManager_Init(
+    LcdScreen* screen, 
+    Qmi8658* module, 
+    MotionDevice* motionDevice, 
+    AppPreferences* preferences,
+    PicoPowerManager* out)
 {
     PicoPowerManager manager =
     {
@@ -155,6 +181,7 @@ void PicoPowerManager_Init(LcdScreen* screen, Qmi8658* module, MotionDevice* mot
             .WakeUp = WakeUp,
             .ShutDown = ShutDown,
             .Reset = Reset,
+            .AddSleepChangeCallback = AddSleepChangeCallback,
             .GetBattery = GetBattery
         },
         .MotionDevice = motionDevice,
@@ -163,8 +190,11 @@ void PicoPowerManager_Init(LcdScreen* screen, Qmi8658* module, MotionDevice* mot
         .Update = Update,
         .Screen = screen,
         .Module = module,
-        .UpdateState = UpdateStateNormal
+        .UpdateState = UpdateStateNormal,
+        .Preferences = preferences
     };
+
+    LinkedList_Init(&manager.SleepChangeCallbacks);
 
     memcpy(out, &manager, sizeof(manager));
 

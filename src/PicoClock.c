@@ -46,6 +46,11 @@ static inline void HandleInput(PendingInput* pending, AppResources* app)
     memcpy(pending, &cleared, sizeof(PendingInput));
 }
 
+static void SleepLoop(AppResources* app)
+{ 
+    // No op loop while sleeping.
+}
+
 static void Loop(AppResources* app)
 { 
     HandleInput(app->PendingInput, app);
@@ -92,16 +97,8 @@ static void Dispose(AppLifecycle* app)
     free(this->TextureBuffer.PixelData);
 }
 
-static void TestLoop(AppResources* app)
-{
-    (*app->CanvasTexture->Draw)(app->CanvasTexture, 0, 0);
-}
-
 static void SetUp(AppResources* app)
 {
-    // Red - good
-    // Green - bad (shows blue)
-    // Blue - bad (shows green)
     (*app->CanvasTexture->Clear)(app->CanvasTexture, Colors.Cyan);
 }
 
@@ -127,6 +124,12 @@ static void Sleep(UserInput* input)
 {
     AppUserInput* this = (AppUserInput*)input;
     this->Pending.Sleep = true;
+}
+
+static void OnSleepStateChanged(PowerManager* powerManager, bool sleeping, void* payload)
+{
+    App* this = (App*)payload;
+    this->Lifecycle.Loop = sleeping ? SleepLoop : Loop;
 }
 
 void App_Init(
@@ -186,6 +189,8 @@ void App_Init(
     };
 
     memcpy(out, &app, sizeof(app));
+
+    (*powerManager->AddSleepChangeCallback)(powerManager, OnSleepStateChanged, out);
 
     Painter_Init(colorConverter, &out->Resources.Painter);
 
