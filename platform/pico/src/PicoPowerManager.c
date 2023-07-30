@@ -11,7 +11,7 @@ typedef struct SleepChangeCallback
 }
 SleepChangeCallback;
 
-static void UpdateStateNormal(PicoPowerManager*);
+static void UpdateStateNormal(PicoPowerManager*, Qmi8658_MotionVector*);
 
 static inline void NotifySleepStateChanged(PicoPowerManager* this)
 {
@@ -20,29 +20,58 @@ static inline void NotifySleepStateChanged(PicoPowerManager* this)
     while (next)
     {
         SleepChangeCallback* callback = (*next->GetValue)(next);
-        (*callback->OnSleepChanged)(&this->Base, false, callback->Payload);
+        (*callback->OnSleepChanged)(&this->Base, this->Sleeping, callback->Payload);
         next = (*next->GetNext)(next);
     }
 }
 
-static void OnWake(void* payload)
+static void OnMotion(PicoPowerManager* state)
+{
+    state->LastMovementTime = time_us_32();
+    (*state->Screen->Base.SetBacklightPercentage)(&state->Screen->Base, state->Preferences->FullBrightness);
+    state->UpdateState = UpdateStateNormal;
+}
+
+static void Wake(void* payload)
 {
     PicoPowerManager* this = (PicoPowerManager*)payload;
     this->Sleeping = false;
 
+    if (this->WomCallback)
+    {
+        (*this->WomCallback->Dispose)(this->WomCallback);
+        this->WomCallback = NULL;
+    }
+
     // vreg_set_voltage(VREG_VOLTAGE_DEFAULT);
-    (*this->Module->DisableWakeOnMotion)(this->Module);
+    if (this->Module->WakeOnMotionEnabled)
+    {
+        (*this->Module->DisableWakeOnMotion)(this->Module);
+    }
 
     (*this->Screen->SetSleep)(this->Screen, false);
-    (*this->Screen->Base.SetBacklightPercentage)(&this->Screen->Base, this->BacklightAtSleep);
+    // (*this->Screen->Base.SetBacklightPercentage)(&this->Screen->Base, this->BacklightAtSleep);
 
     NotifySleepStateChanged(this);
+    OnMotion(this);
+}
+
+static void OnWakeOnMotion(void* payload)
+{
+    Wake((PicoPowerManager*)payload);
+}
+
+static void WakeUp(PowerManager* powerManager)
+{
+    Wake((PicoPowerManager*)powerManager);
 }
 
 static void ShutDown(PowerManager* powerManager)
 {
     PicoPowerManager* this = (PicoPowerManager*)powerManager;
     (*this->Module->PowerDown)(this->Module);
+    (*this->Screen->Base.SetBacklightPercentage)(&this->Screen->Base, 0);
+    (*this->Screen->SetSleep)(this->Screen, true);
 }
 
 static void Sleep(PowerManager* powerManager)
@@ -53,22 +82,12 @@ static void Sleep(PowerManager* powerManager)
     (*this->Screen->Base.SetBacklightPercentage)(&this->Screen->Base, 0);
     (*this->Screen->SetSleep)(this->Screen, true);
 
-    (*this->Module->EnableWakeOnMotion)(this->Module, OnWake, this);
+    this->WomCallback = (*this->Module->EnableWakeOnMotion)(this->Module, OnWakeOnMotion, this);
 
     NotifySleepStateChanged(this);
 
     // This causes a reboot.
     // vreg_set_voltage(VREG_VOLTAGE_MIN);
-}
-
-static void WakeUp(PowerManager* powerManager)
-{
-    PicoPowerManager* this = (PicoPowerManager*)powerManager;
-}
-
-static void Reset(PowerManager* powerManager)
-{
-    PicoPowerManager* this = (PicoPowerManager*)powerManager;
 }
 
 static Battery* GetBattery(PowerManager* manager)
@@ -77,31 +96,35 @@ static Battery* GetBattery(PowerManager* manager)
     return &this->Battery.Base;
 }
 
-static void OnMotion(PicoPowerManager* state)
+static void UpdateStateSleep(PicoPowerManager* state, Qmi8658_MotionVector* vector)
 {
-    state->LastMovementTime = time_us_32();
-    (*state->Screen->Base.SetBacklightPercentage)(&state->Screen->Base, 90);
-    state->UpdateState = UpdateStateNormal;
 }
 
-static void UpdateStateDim(PicoPowerManager* state)
+static void UpdateStateDim(PicoPowerManager* state, Qmi8658_MotionVector* vector)
 {
+#define SMALL_MOTION 50.0f
+
+    if (vector->X > SMALL_MOTION || vector->X < -SMALL_MOTION) 
+    {
+        state->LastMovementTime = time_us_32();
+        return;
+    } 
+
     uint32_t ellapsedTime = (time_us_32() - state->LastMovementTime) / 1000;
 
     if (ellapsedTime > state->Preferences->SleepTimeoutMillis)
     {
         (*state->Base.Sleep)(&state->Base);
-        (*state->OnMotion)(state);
     }
 }
 
-static void UpdateStateNormal(PicoPowerManager* state)
+static void UpdateStateNormal(PicoPowerManager* state, Qmi8658_MotionVector* vector)
 {
     uint32_t ellapsedTime = (time_us_32() - state->LastMovementTime) / 1000;
 
     if (ellapsedTime > state->Preferences->DimTimeoutMillis)
     {
-        (*state->Screen->Base.SetBacklightPercentage)(&state->Screen->Base, 5);
+        (*state->Screen->Base.SetBacklightPercentage)(&state->Screen->Base, state->Preferences->DimBrightness);
         state->UpdateState = UpdateStateDim;
     }
 }
@@ -152,8 +175,13 @@ static void Update(PicoPowerManager* powerManager)
     }
     else
     {
-        (*powerManager->UpdateState)(powerManager);
+        (*powerManager->UpdateState)(powerManager, &vector);
     }
+}
+
+static void Reset(PowerManager* powerManager)
+{
+    PicoPowerManager* this = (PicoPowerManager*)powerManager;
 }
 
 static void AddSleepChangeCallback(PowerManager* powerManager, SleepChangeCallbackHandler onChange, void* payload)

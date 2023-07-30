@@ -34,6 +34,13 @@
 // Time t2
 #define ACCEL_WAKE_UP_TIME_MILLIS 3 
 
+typedef struct PendingStatusEvents
+{
+    bool WomEvent;
+    bool Ctrl9Event;
+}
+PendingStatusEvents;
+
 typedef struct 
 {
     DeferredTaskScheduler* Scheduler;
@@ -753,14 +760,20 @@ static volatile bool int1Pending = false;
 static volatile bool int2Pending = false;
 static InterruptCallback* int1Callback;
 static InterruptCallback* int2Callback;
+// static PendingStatusEvents pendingStatus = { };
 
-static InterruptCallback* CreateInterruptCallback(Qmi8658* module, InterruptCallbackHandler onInterruptReceived, void* payload)
+static InterruptCallback* CreateInterruptCallback(
+    Qmi8658* module, 
+    InterruptCallbackHandler onInterruptReceived, 
+    void* payload,
+    void (*dispose)(InterruptCallback*))
 {
     InterruptCallback callback = 
     {
         .OnInterruptReceived = onInterruptReceived,
         .Payload = payload,
-        .Module = module
+        .Module = module,
+        .Dispose = dispose 
     }; 
 
     InterruptCallback* out = (InterruptCallback*)malloc(sizeof(InterruptCallback));
@@ -817,7 +830,7 @@ static inline void NotifyInterruptCallbacks(InterruptCallback* first)
     }
 }
 
-static inline void PollInt1(Qmi8658* module)
+static inline void AwaitInt1()
 {
     while (!int1Pending)
     {
@@ -825,10 +838,9 @@ static inline void PollInt1(Qmi8658* module)
     }
 
     int1Pending = false;
-    NotifyInterruptCallbacks(module->Interrupt1Callbacks);
 }
 
-static inline void PollInt2(Qmi8658* module)
+static inline void AwaitInt2()
 {
     while (!int2Pending)
     {
@@ -836,6 +848,17 @@ static inline void PollInt2(Qmi8658* module)
     }
 
     int2Pending = false;
+}
+
+static void PollInt1(Qmi8658* module)
+{
+    AwaitInt1();
+    NotifyInterruptCallbacks(module->Interrupt1Callbacks);
+}
+
+static void PollInt2(Qmi8658* module)
+{
+    AwaitInt2();
     NotifyInterruptCallbacks(module->Interrupt2Callbacks);
 }
 
@@ -853,17 +876,40 @@ static void OnGpioInterruptReceived(uint gpio, uint32_t eventMask)
     }
 }
 
+// static void ReadInterruptStatus1(InterruptCallback* callback)
+// {
+//     Status1Values status1;
+//     ReadStatus1(callback->Module, &status1);
+
+//     if (status1.Ctrl9CommandDone)
+//     {
+//         pendingStatus.Ctrl9Event = true;
+//     }
+
+//     if (status1.WakeOnMotionEvent)
+//     {
+//         pendingStatus.WomEvent = true;
+//     }
+// }
+
 static void OnCtrl9CommandExecuted(InterruptCallback* callback)
 {
-    StatusIntValues statusInt;
-    ReadStatusInt(callback->Module, &statusInt);
+    // StatusIntValues statusInt;
+    // ReadStatusInt(callback->Module, &statusInt);
 
-    Status1Values status1;
-    ReadStatus1(callback->Module, &status1);
+    // Status1Values status1;
+    // ReadStatus1(callback->Module, &status1);
     // if (!ReadStatus1(callback->Module, &status1) || !status1.Ctrl9CommandDone)
     // {
     //     return;
     // }
+
+    // if (!pendingStatus.Ctrl9Event)
+    // {
+    //     return;
+    // }
+
+    // pendingStatus.Ctrl9Event = false;
 
     *((bool*)callback->Payload) = false;
     RemoveInterruptCallback(callback, &callback->Module->Interrupt1Callbacks);
@@ -871,17 +917,20 @@ static void OnCtrl9CommandExecuted(InterruptCallback* callback)
 
 static void RunCtrl9ReadCommand(Qmi8658* module, enum QMI8658_Ctrl9Command command)
 {
-    volatile bool waiting = true;
-    AddInterruptCallback( 
-        CreateInterruptCallback(module, OnCtrl9CommandExecuted, (void*)&waiting),
-        &module->Interrupt1Callbacks);
+    // volatile bool waiting = true;
+    // AddInterruptCallback( 
+    //     CreateInterruptCallback(module, OnCtrl9CommandExecuted, (void*)&waiting),
+    //     &module->Interrupt1Callbacks);
 
     WriteSingle(module, QMI8658Register_Ctrl9, command);
 
-    while (waiting)
-    {
-        PollInt1(module);
-    }
+    // HACK: Status1 not being read correctly. INT dependency not working.
+    sleep_ms(100);
+
+    // while (waiting)
+    // {
+    //     PollInt1(module);
+    // }
 }
 
 static void RunCtrl9WriteCommand(Qmi8658* module, enum QMI8658_Ctrl9Command command, Ctrl9CalibrationData* registers)
@@ -955,6 +1004,13 @@ static void ReadAttitudeEngine(MotionDevice* device, Qmi8658_MotionVector* veloc
     velocityOut->Z = (float)(raw_v_xyz[2] * 1.0f) / device->VectorLsbDivider;
 }
 
+static void DisposeAeDataEvent(InterruptCallback* callback)
+{
+    RemoveInterruptCallback(
+        callback,
+        &callback->Module->Interrupt2Callbacks);
+}
+
 static void OnAeDataAvailable(InterruptCallback* callback)
 // static void OnAeDataAvailable(InterruptCallback* callback, Status0Values* status0, Status1Values* status1)
 {
@@ -970,9 +1026,7 @@ static void OnAeDataAvailable(InterruptCallback* callback)
     }
 
     *((bool*)callback->Payload) = false;
-    RemoveInterruptCallback(
-        callback,
-        &callback->Module->Interrupt2Callbacks);
+    DisposeAeDataEvent(callback);
 }
 
 static inline Task* QueryMotionOnDemand(Qmi8658* module) 
@@ -991,7 +1045,7 @@ static inline Task* QueryMotionOnDemand(Qmi8658* module)
 
     // (6.1.2: AE Mode) In AE Mode, INT2 is asserted when data is available.
     AddInterruptCallback( 
-        CreateInterruptCallback(module, OnAeDataAvailable, &waiting),
+        CreateInterruptCallback(module, OnAeDataAvailable, &waiting, DisposeAeDataEvent),
         &module->Interrupt2Callbacks);
 
     WriteSingle(module, QMI8658Register_Ctrl9, QMI8658_Ctrl9_Cmd_Rqst_Sdi_Mod);
@@ -1264,16 +1318,29 @@ static void NoOpInt(InterruptCallback* callback)
 {
 }
 
-static void OnWomEvent(InterruptCallback* callback)
+static void DisposeWomEvent(InterruptCallback* callback)
 {
-    callback->OnInterruptReceived = NoOpInt;
     WomInterruptPayload* payload = (WomInterruptPayload*)callback->Payload;
-    RemoveInterruptCallback(callback, &callback->Module->Interrupt1Callbacks);
-    (*payload->Scheduler->Schedule)(payload->Scheduler, payload->Task);
+    RemoveInterruptCallback(callback, &int1Callback);
     free(payload);
 }
 
-static void EnableWakeOnMotion(Qmi8658* module, void (*onWake)(void* payload), void* callbackPayload)
+static void OnWomEvent(InterruptCallback* callback)
+{
+    // if (!pendingStatus.WomEvent)
+    // {
+    //     return;
+    // }
+
+    // pendingStatus.WomEvent = false;
+
+    callback->OnInterruptReceived = NoOpInt;
+    WomInterruptPayload* payload = (WomInterruptPayload*)callback->Payload;
+    (*payload->Scheduler->Schedule)(payload->Scheduler, payload->Task);
+    DisposeWomEvent(callback);
+}
+
+static InterruptCallback* EnableWakeOnMotion(Qmi8658* module, void (*onWake)(void* payload), void* callbackPayload)
 {
     module->WakeOnMotionEnabled = true;
 
@@ -1349,9 +1416,10 @@ static void EnableWakeOnMotion(Qmi8658* module, void (*onWake)(void* payload), v
     WomInterruptPayload* intPayload = (WomInterruptPayload*)malloc(sizeof(WomInterruptPayload));
     intPayload->Scheduler = module->Scheduler;
     intPayload->Task = womTask;
-    AddInterruptCallback(
-        CreateInterruptCallback(module, OnWomEvent, intPayload),
-        &int1Callback);
+
+    InterruptCallback* callback = CreateInterruptCallback(module, OnWomEvent, intPayload, DisposeWomEvent);
+    AddInterruptCallback(callback, &int1Callback);
+    return callback;
 }
 
 static void DisableWakeOnMotion(Qmi8658* module)
@@ -1392,17 +1460,22 @@ static void DisableWakeOnMotion(Qmi8658* module)
         });
 }
 
+static void DisposeResetAcknowledged(InterruptCallback* callback)
+{
+    RemoveInterruptCallback(callback, &callback->Module->Interrupt1Callbacks);
+}
+
 static void OnResetAcknowledged(InterruptCallback* callback)
 {
     *((bool*)callback->Payload) = false;
-    RemoveInterruptCallback(callback, &callback->Module->Interrupt1Callbacks);
+    DisposeResetAcknowledged(callback);
 }
 
 static void Reset(Qmi8658* module)
 {
     volatile bool waiting = true;
     AddInterruptCallback(
-        CreateInterruptCallback(module, OnResetAcknowledged, (bool*)&waiting),
+        CreateInterruptCallback(module, OnResetAcknowledged, (bool*)&waiting, DisposeAeDataEvent),
         &module->Interrupt1Callbacks);
 
     WriteSingle(module, QMI8658_Reset, 0xFF);
@@ -1480,6 +1553,10 @@ void Qmi8658_Init(i2c_inst_t* i2cInstance, DeferredTaskScheduler* scheduler, Qmi
     };
 
     memcpy(out, &module, sizeof(Qmi8658));
+
+    // AddInterruptCallback(
+    //     CreateInterruptCallback(out, ReadInterruptStatus1, NULL),
+    //     &int1Callback);
 
     // Enable INT1 interrupt.
     gpio_init(IMU_INT1_GPIO_PIN);

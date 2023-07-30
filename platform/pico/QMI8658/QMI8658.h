@@ -610,6 +610,7 @@ typedef struct InterruptCallback
     void* Payload;
     struct InterruptCallback* Next;
     struct Qmi8658* Module;
+    void (*Dispose)(struct InterruptCallback*);
 }
 InterruptCallback;
 
@@ -637,7 +638,7 @@ typedef struct Qmi8658
         enum QMI8658_AeOdr dataRate,
         MotionDevice* attitudeEngineOut);
 
-    void (*EnableWakeOnMotion)(struct Qmi8658*, void (*onWake)(void* payload), void* callbackPayload);
+    InterruptCallback* (*EnableWakeOnMotion)(struct Qmi8658*, void (*onWake)(void* payload), void* callbackPayload);
     void (*DisableWakeOnMotion)(struct Qmi8658*);
     DeferredTaskScheduler* Scheduler;
     bool WakeOnMotionEnabled;

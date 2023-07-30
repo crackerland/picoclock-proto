@@ -36,6 +36,12 @@ static inline void HandleInput(PendingInput* pending, AppResources* app)
         (*app->PowerManager->Sleep)(app->PowerManager);
     }
 
+    if (pending->Wake)
+    {
+        printf("Polled input: WAKE\n");
+        (*app->PowerManager->WakeUp)(app->PowerManager);
+    }
+
     if (pending->Reset)
     {
         printf("Polled input: RESET\n");
@@ -48,7 +54,7 @@ static inline void HandleInput(PendingInput* pending, AppResources* app)
 
 static void SleepLoop(AppResources* app)
 { 
-    // No op loop while sleeping.
+    HandleInput(app->PendingInput, app);
 }
 
 static void Loop(AppResources* app)
@@ -126,10 +132,22 @@ static void Sleep(UserInput* input)
     this->Pending.Sleep = true;
 }
 
+static void Wake(UserInput* input)
+{
+    AppUserInput* this = (AppUserInput*)input;
+    this->Pending.Wake = true;
+}
+
+static void Reset(UserInput* input)
+{
+    AppUserInput* this = (AppUserInput*)input;
+    this->Pending.Reset = true;
+}
+
 static void OnSleepStateChanged(PowerManager* powerManager, bool sleeping, void* payload)
 {
     App* this = (App*)payload;
-    this->Lifecycle.Loop = sleeping ? SleepLoop : Loop;
+    // this->Lifecycle.Loop = sleeping ? SleepLoop : Loop;
 }
 
 void App_Init(
@@ -159,7 +177,9 @@ void App_Init(
                 .Minus = Minus,
                 .Plus = Plus,
                 .Select = Select,
-                .Sleep = Sleep
+                .Sleep = Sleep,
+                .Wake = Wake,
+                .Reset = Reset
             }
         },
         .Resources = 

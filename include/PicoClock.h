@@ -21,6 +21,7 @@ typedef struct PendingInput
     bool Minus;
     bool Select;
     bool Sleep;
+    bool Wake;
     bool Reset;
 }
 PendingInput;
@@ -29,6 +30,8 @@ typedef struct AppPreferences
 {
     unsigned int SleepTimeoutMillis;
     unsigned int DimTimeoutMillis;
+    uint8_t FullBrightness;
+    uint8_t DimBrightness;
 }
 AppPreferences;
 

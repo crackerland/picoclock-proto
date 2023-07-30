@@ -20,9 +20,10 @@ typedef struct PicoPowerManager
     uint8_t BacklightAtSleep;
     LinkedList SleepChangeCallbacks;
     AppPreferences* Preferences;
+    InterruptCallback* WomCallback;
     void (*SetSleepTimeout)(struct PicoPowerManager*, unsigned int sleepTimeoutMillis);
     void (*SetDimTimeout)(struct PicoPowerManager*, unsigned int dimTimeoutMillis);
-    void (*UpdateState)(struct PicoPowerManager*);
+    void (*UpdateState)(struct PicoPowerManager*, Qmi8658_MotionVector* vector);
     void (*OnMotion)(struct PicoPowerManager*);
     void (*Update)(struct PicoPowerManager*);
 }

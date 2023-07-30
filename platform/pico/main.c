@@ -37,12 +37,14 @@ extern _Colors Colors;
 #define CMD_SELECT 0x4
 #define CMD_SLEEP 0x5
 #define CMD_RESET 0x6
+#define CMD_WAKE 0x7
 
 #define CMD_TEXT_SET_TIME "TIM"
 #define CMD_TEXT_PLUS "PLS"
 #define CMD_TEXT_MINUS "MIN"
 #define CMD_TEXT_SELECT "SEL"
 #define CMD_TEXT_SLEEP "SLP"
+#define CMD_TEXT_WAKE "WAK"
 #define CMD_TEXT_RESET "RST"
 
 typedef struct CommandState
@@ -120,8 +122,12 @@ static inline void HandleMessage(CommandState* commandState, UserInput* input)
                 (*input->Sleep)(input);
                 break;
 
+            case CMD_WAKE:
+                (*input->Wake)(input);
+                break;
+
             case CMD_RESET:
-                // (*input->Reset)(input);
+                (*input->Reset)(input);
                 break;
         }
     }
@@ -202,6 +208,11 @@ static void HandleCommand(char command[4], bool* cancel)
         printf("Sleep\n");
         PushMessage(CMD_SLEEP);
     }
+    else if (!strcmp(CMD_TEXT_WAKE, command))
+    {
+        printf("Wake\n");
+        PushMessage(CMD_WAKE);
+    }
     else if (!strcmp(CMD_TEXT_RESET, command))
     {
         printf("Reset\n");
@@ -273,7 +284,9 @@ static inline void AppMain()
     AppPreferences preferences = 
     {
         .SleepTimeoutMillis = 60 * 1000, // 1 minute.
-        .DimTimeoutMillis = 7 * 1000 // 7 seconds.
+        .DimTimeoutMillis = 7 * 1000, // 7 seconds.
+        .FullBrightness = 90,
+        .DimBrightness = 5
     };
 
     PicoPowerManager powerManager;
