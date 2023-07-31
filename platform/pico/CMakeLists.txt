@@ -84,6 +84,8 @@ add_executable(main
   main.c
   ${ROOT}/src/PicoClock.c
   ${ROOT}/src/Painter.c
+  ./src/PicoPreferenceManager.c
+  ./src/PicoPersistentStorage.c
   ./src/ScreenFramebuffer.c
   ./src/PicoDateTimeProvider.c
   ./src/PicoPowerManager.c

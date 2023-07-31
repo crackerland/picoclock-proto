@@ -6,6 +6,7 @@
 #include "PicoBattery.h"
 #include "GC9A01A.h"
 #include "QMI8658.h"
+#include "PreferenceManager.h"
 #include "collections/LinkedList.h"
 
 typedef struct PicoPowerManager
@@ -19,7 +20,8 @@ typedef struct PicoPowerManager
     uint32_t LastMovementTime;
     uint8_t BacklightAtSleep;
     LinkedList SleepChangeCallbacks;
-    AppPreferences* Preferences;
+    AppPreferences Preferences;
+    PreferenceManager* PreferenceManager;
     InterruptCallback* WomCallback;
     void (*SetSleepTimeout)(struct PicoPowerManager*, unsigned int sleepTimeoutMillis);
     void (*SetDimTimeout)(struct PicoPowerManager*, unsigned int dimTimeoutMillis);
@@ -30,10 +32,11 @@ typedef struct PicoPowerManager
 PicoPowerManager;
 
 extern void PicoPowerManager_Init(
+    float batteryMah,
     LcdScreen* screen, 
     Qmi8658* module, 
     MotionDevice* motionDevice, 
-    AppPreferences* preferences,
+    PreferenceManager* preferenceManager,
     PicoPowerManager* out);
 
 #endif

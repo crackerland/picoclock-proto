@@ -1327,13 +1327,6 @@ static void DisposeWomEvent(InterruptCallback* callback)
 
 static void OnWomEvent(InterruptCallback* callback)
 {
-    // if (!pendingStatus.WomEvent)
-    // {
-    //     return;
-    // }
-
-    // pendingStatus.WomEvent = false;
-
     callback->OnInterruptReceived = NoOpInt;
     WomInterruptPayload* payload = (WomInterruptPayload*)callback->Payload;
     (*payload->Scheduler->Schedule)(payload->Scheduler, payload->Task);

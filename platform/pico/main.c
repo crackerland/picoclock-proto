@@ -9,6 +9,7 @@
 #include "PicoPowerManager.h"
 #include "PicoBattery.h"
 #include "PicoColorConverter.h"
+#include "PicoPreferenceManager.h"
 #include "DefaultDateTimeFormatter.h"
 #include "pico/stdlib.h"
 #include "GC9A01A.h"
@@ -281,17 +282,11 @@ static inline void AppMain()
     //     QMI8658AeOdr_32Hz,
     //     &attitudeEngine);
 
-    AppPreferences preferences = 
-    {
-        .SleepTimeoutMillis = 60 * 1000, // 1 minute.
-        .DimTimeoutMillis = 7 * 1000, // 7 seconds.
-        .FullBrightness = 90,
-        .DimBrightness = 5
-    };
+    PicoPreferenceManager preferenceManager;
+    PicoPreferenceManager_Init(&preferenceManager);
 
     PicoPowerManager powerManager;
-    PicoPowerManager_Init(&lcdScreen, &module, &gyro, &preferences, &powerManager);
-    // PicoPowerManager_Init(&lcdScreen, &module, &attitudeEngine, &powerManager);
+    PicoPowerManager_Init(40.0f, &lcdScreen, &module, &gyro, &preferenceManager.Base, &powerManager);
 
     ColorConverter colorConverter;
     PicoColorConverter_Init(&colorConverter);
