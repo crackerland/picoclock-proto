@@ -22,10 +22,9 @@
 #include "Texture16.h"
 #include "pico/multicore.h"
 #include "hardware/adc.h"
-#include "hardware/spi.h"
 #include "hardware/i2c.h"
-#include "hardware/pwm.h"
 #include "hardware/watchdog.h"
+#include "hardware/vreg.h"
 
 #define MULTICORE 
 
@@ -324,6 +323,11 @@ static void Core1Main()
 int main(void)
 {
     stdio_init_all();
+
+    // Manually tested to find the lowest voltage and frequency that would still allow 
+    // the module to function properly. 
+    vreg_set_voltage(VREG_VOLTAGE_0_90);
+    set_sys_clock_khz(24000, true);
 
     // if (watchdog_caused_reboot()) 
     // {
