@@ -5,9 +5,6 @@
 		},
 		{
 			"path": "../RP2040-LCD-1.28"
-		},
-		{
-			"path": "../pico-examples"
 		}
 	],
 	"settings": {
@@ -58,16 +55,27 @@
 			"point.h": "c",
 			"rectangle.h": "c",
 			"picoclock.h": "c",
-			"bytehelper.h": "c"
+			"bytehelper.h": "c",
+			"sdlscreen.h": "c",
+			"sdl.h": "c",
+			"picopowermanager.h": "c"
 		},
 		"cortex-debug.variableUseNaturalFormat": true,
-		"makefile.makefilePath": "${workspaceFolder}/platform/sdl/",
+		"makefile.makefilePath": "${workspaceFolder}",
 		"makefile.configurations": [
 			{
 				"makeArgs": [ "-j4" ],
-				"name": "Unnamed configuration 1"
+				"name": "With -j4"
 			}
 		],
-		"makefile.launchConfigurations": [ ]
+		"makefile.launchConfigurations": [
+			{
+				"cwd": "${workspaceFolder}/platform/sdl",
+				"binaryPath": "${workspaceFolder}/platform/sdl/bin/main.exe"
+			}
+		],
+		"makefile.configureOnOpen": false,
+		"makefile.configureOnEdit": false,
+		"makefile.configureAfterCommand": false
 	}
 }

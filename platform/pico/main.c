@@ -327,7 +327,7 @@ int main(void)
     // Manually tested to find the lowest voltage and frequency that would still allow 
     // the module to function properly. 
     vreg_set_voltage(VREG_VOLTAGE_0_90);
-    set_sys_clock_khz(24000, true);
+    // set_sys_clock_khz(24000, true);
 
     // if (watchdog_caused_reboot()) 
     // {
